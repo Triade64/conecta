@@ -2,11 +2,16 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Base inicial: somente usuários autenticados poderão acessar os dados.
-    // As permissões por setor serão refinadas na implementação da autenticação.
-    match /{document=**} {
-      allow read, write: if request.auth != null;
+    function signedIn() { return request.auth != null; }
+    function isAdmin() { return signedIn() && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin"; }
+    match /users/{uid} {
+      allow read: if signedIn() && (uid == request.auth.uid || isAdmin());
+      allow create, update, delete: if isAdmin();
+    }
+    match /notices/{id} { allow read, write: if signedIn(); }
+    match /reminders/{id} { allow read, write: if signedIn() && (request.method == "get" || resource.data.ownerId == request.auth.uid || request.resource.data.ownerId == request.auth.uid); }
+    match /conversations/{conversationId} { allow read, write: if signedIn();
+      match /messages/{messageId} { allow read, write: if signedIn(); }
     }
   }
 }
-
