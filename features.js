@@ -448,7 +448,7 @@
   emojiStyle.textContent = ".emoji-compose-tools{position:relative;display:flex;justify-content:flex-end;padding:4px 10px 0}.emoji-toggle{border:0;background:transparent;border-radius:8px;padding:5px 8px;font-size:21px;cursor:pointer}.emoji-toggle:hover{background:#edf2eb}.emoji-picker{position:absolute;right:8px;bottom:42px;z-index:8;width:min(300px,calc(100vw - 60px));padding:8px;background:#fff;border:1px solid #dfe5dc;border-radius:12px;box-shadow:0 10px 28px #18231924;display:grid;grid-template-columns:repeat(6,1fr);gap:3px}.emoji-picker[hidden]{display:none}.emoji-choice{border:0;background:transparent;border-radius:7px;padding:6px 2px;font-size:21px;cursor:pointer}.emoji-choice:hover{background:#edf2eb}.composer .chat-rich-input{flex:1;min-height:40px;max-height:130px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none;white-space:pre-wrap;overflow-wrap:anywhere}.composer .chat-rich-input:focus{border-color:#9aaf9a;box-shadow:0 0 0 2px #e8eee7}.composer .chat-rich-input:empty:before{content:attr(data-placeholder);color:#8b928d}.chat-gif-preview{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line)}.chat-gif-preview[hidden]{display:none}.chat-gif-preview img{max-width:170px;max-height:110px;object-fit:contain;border-radius:8px}.chat-gif-preview button{border:0;background:transparent;border-radius:8px;padding:5px 8px;cursor:pointer}.bubble .message-attachment{display:block;max-width:min(240px,70vw);max-height:320px;border-radius:10px;object-fit:contain;margin-bottom:4px}.profile-photo-area{display:flex;align-items:center;gap:14px;margin:16px 0}.profile-photo-preview[hidden]{display:none!important}.profile-photo-preview{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;flex:0 0 76px;background:#e8eee7;color:#223e2a;font-weight:700;font-size:22px;object-fit:cover}.profile-photo-controls{display:grid;gap:6px}.profile-photo-controls small,.notification-setting small{color:#6f746d}.notification-setting{display:grid;gap:12px}.profile-feedback{margin-top:8px}.profile-grid{align-items:start}";
   document.head.append(emojiStyle);
 
-  const getChatDraftText = input => (input?.innerText || input?.textContent || "").replace(/\\u00a0/g, " ").trim();
+  const getChatDraftText = input => (input?.innerText || input?.textContent || "").replace(/\u00a0/g, " ").trim();
   const bindGifPaste = conversation => {
     const form = byId("composer"), input = byId("chatInput");
     if (!form || !input || form.dataset.gifPasteReady) return;
@@ -517,7 +517,8 @@
         return;
       }
       if (attachRemoteGif(candidate)) { event.preventDefault(); return; }
-      const plain = clipboard.getData("text/plain");
+      const plain = clipboard.getData("text/plain").trim();
+      if (attachRemoteGif(plain)) { event.preventDefault(); return; }
       if (plain) {
         event.preventDefault();
         document.execCommand("insertText", false, plain);
@@ -543,8 +544,19 @@
     const user = currentUser();
     const input = byId("chatInput");
     const text = getChatDraftText(input);
-    const attachmentPath = form.dataset.attachmentPath || null;
-    const attachmentUrl = form.dataset.attachmentUrl || null;
+    let attachmentPath = form.dataset.attachmentPath || null;
+    let attachmentUrl = form.dataset.attachmentUrl || null;
+    const inlineGif = input.querySelector("img[src]");
+    if (!attachmentPath && !attachmentUrl && inlineGif) {
+      const source = inlineGif.src;
+      if (/^https:\/\//i.test(source) && /\.gif(?:$|[?#])/i.test(source)) attachmentUrl = source;
+      else if (/^data:image\/gif/i.test(source)) {
+        const blob = await fetch(source).then(response => response.blob());
+        const uploaded = await window.conectaFirebase.uploadChatGif(user, blob);
+        attachmentPath = uploaded.path;
+        attachmentUrl = uploaded.url;
+      }
+    }
     if (!conversation?.firestoreId || !user || (!text && !attachmentPath && !attachmentUrl)) return;
     const button = form.querySelector('button[type="submit"]');
     if (button) { button.disabled = true; button.textContent = "Enviando…"; }
@@ -552,6 +564,7 @@
       await window.conectaFirebase.sendMessage(user, conversation.firestoreId, text, conversation.replyTarget?.id || null, attachmentPath, attachmentUrl);
       conversation.replyTarget = null;
       input.replaceChildren();
+      document.querySelectorAll(".chat-rich-input img").forEach(image => image.remove());
       delete form.dataset.attachmentPath;
       delete form.dataset.attachmentUrl;
       const preview = document.querySelector(".chat-gif-preview");
