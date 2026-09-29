@@ -67,6 +67,7 @@ window.conectaFirebase = {
 
 supabase.auth.onAuthStateChange(async (_event, session) => {
   const user = session?.user;
+  window.conectaCurrentUser = user || null;
   document.querySelector("#authScreen")?.classList.toggle("visible", !user);
   document.querySelector(".app")?.classList.toggle("authenticated", !!user);
   document.querySelector("#authLoading")?.classList.remove("visible");
