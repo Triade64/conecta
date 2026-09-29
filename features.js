@@ -2,6 +2,30 @@
   const currentUserId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.uid || null;
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
   const byId = id => document.getElementById(id);
+  const unreadStyle = document.createElement("style");
+  unreadStyle.textContent = ".conversation-list .chat-name{display:flex;align-items:center;justify-content:space-between;gap:8px}.conversation-list .unread-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#16875d;color:#fff;font-size:11px;font-weight:700;line-height:1}.conversation-list .unread-badge[hidden]{display:none}";
+  document.head.append(unreadStyle);
+  const updateUnreadBadges = () => {
+    document.querySelectorAll(".conversation-list .conv-item").forEach(button => {
+      const contact = contacts[Number(button.dataset.contact)];
+      const label = button.querySelector(".chat-name");
+      if (!label || !contact) return;
+      label.querySelector(".unread-badge")?.remove();
+      const count = Number(contact.unreadCount) || 0;
+      if (!count) return;
+      const badge = document.createElement("span");
+      badge.className = "unread-badge";
+      badge.textContent = count > 99 ? "99+" : String(count);
+      badge.setAttribute("aria-label", `${count} ${count === 1 ? "mensagem não lida" : "mensagens não lidas"}`);
+      badge.title = badge.getAttribute("aria-label");
+      label.append(badge);
+    });
+  };
+  window.addEventListener("conecta-unread-sync", event => {
+    const counts = event.detail || {};
+    contacts.forEach(contact => { contact.unreadCount = Number(counts[contact.firestoreId]) || 0; });
+    updateUnreadBadges();
+  });
   const addButton = (parent, label, className, onClick) => {
     const button = document.createElement("button");
     button.type = "button";
@@ -132,6 +156,7 @@
   const baseRenderConversations = renderConversations;
   renderConversations = window.renderConversations = (filter, watch = true) => {
     baseRenderConversations(filter, watch);
+    updateUnreadBadges();
     const conversation = contacts[selectedContact];
     const box = byId("chatMessages");
     if (!conversation || !box) return;
