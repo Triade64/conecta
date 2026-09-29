@@ -41,9 +41,22 @@ function startDataSync(user) {
 
 const watchMessages = async (conversationId, callback) => {
   stopMessageSync();
-  const refresh = async () => { const { data } = await supabase.from("messages").select("*").eq("conversation_id", conversationId).order("created_at"); callback((data || []).map(x => ({ id: x.id, ...x, text: x.text, createdAt: x.created_at }))); };
+  const userId = window.conectaCurrentUser?.id;
+  const refresh = async () => {
+    const [{ data, error }, { data: hidden, error: hiddenError }] = await Promise.all([
+      supabase.from("messages").select("*").eq("conversation_id", conversationId).order("created_at"),
+      supabase.from("message_hidden_for").select("message_id").eq("user_id", userId)
+    ]);
+    if (error) throw error;
+    if (hiddenError) throw hiddenError;
+    const hiddenIds = new Set((hidden || []).map(x => x.message_id));
+    callback((data || []).filter(x => !hiddenIds.has(x.id)).map(x => ({ id: x.id, ...x, text: x.text, createdAt: x.created_at, replyTo: x.reply_to, editedAt: x.edited_at, deletedAt: x.deleted_at })));
+  };
   await refresh();
-  const channel = supabase.channel("messages-" + conversationId).on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: "conversation_id=eq." + conversationId }, refresh).subscribe();
+  const channel = supabase.channel("messages-" + conversationId)
+    .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: "conversation_id=eq." + conversationId }, refresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + userId }, refresh)
+    .subscribe();
   stopMessageSync = () => supabase.removeChannel(channel);
 };
 
@@ -64,11 +77,39 @@ window.conectaFirebase = {
     if (result.user) { const { error: profileError } = await supabase.from("profiles").upsert({ id: result.user.id, name: data.name, email: data.email, role: data.role, sector: data.sector, active: true }); if (profileError) throw profileError; }
     return result.user;
   },
-  addNotice: (user, data) => supabase.from("notices").insert({ title: data.title, sector: data.sector, tag: data.tag || "NOVO", body: data.text, author_id: user.id }),
-  addReminder: (user, data) => supabase.from("reminders").insert({ title: data.title, due_at: new Date().toISOString(), done: !!data.done, owner_id: user.id }),
+  addNotice: async (user, data) => { const { error } = await supabase.from("notices").insert({ title: data.title, sector: data.sector, tag: data.tag || "NOVO", body: data.text, author_id: user.id }); if (error) throw error; },
+  updateNotice: async (id, data) => { const { error } = await supabase.from("notices").update({ title: data.title, body: data.text, sector: data.sector }).eq("id", id); if (error) throw error; },
+  deleteNotice: async id => { const { data, error } = await supabase.from("notices").delete().eq("id", id).select("id").maybeSingle(); if (error) throw error; if (!data) throw new Error("O aviso não pode ser excluído."); },
+  addReminder: async (user, data) => { const { error } = await supabase.from("reminders").insert({ title: data.title, due_at: data.due_at || new Date().toISOString(), done: !!data.done, owner_id: user.id }); if (error) throw error; },
+  updateReminder: async (id, data) => { const { error } = await supabase.from("reminders").update({ title: data.title, due_at: data.due_at }).eq("id", id); if (error) throw error; },
+  deleteReminder: async id => { const { data, error } = await supabase.from("reminders").delete().eq("id", id).select("id").maybeSingle(); if (error) throw error; if (!data) throw new Error("O lembrete não pode ser excluído."); },
+  editMessage: async (id, text) => {
+    const { data: previous, error: readError } = await supabase.from("messages").select("conversation_id,text").eq("id", id).maybeSingle();
+    if (readError) throw readError;
+    if (!previous) throw new Error("A mensagem não foi encontrada.");
+    const { data, error } = await supabase.from("messages").update({ text }).eq("id", id).is("deleted_at", null).select("id").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("A mensagem não pode mais ser editada.");
+    await supabase.from("conversations").update({ last_message: text }).eq("id", previous.conversation_id).eq("last_message", previous.text);
+  },
+  deleteMessageForEveryone: async id => {
+    const { data: previous, error: readError } = await supabase.from("messages").select("conversation_id,text").eq("id", id).maybeSingle();
+    if (readError) throw readError;
+    if (!previous) throw new Error("A mensagem não foi encontrada.");
+    const { data, error } = await supabase.from("messages").update({ text: "Mensagem apagada", deleted_at: new Date().toISOString() }).eq("id", id).is("deleted_at", null).select("id").maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error("A mensagem não pode mais ser apagada.");
+    await supabase.from("conversations").update({ last_message: "Mensagem apagada" }).eq("id", previous.conversation_id).eq("last_message", previous.text);
+  },
+  deleteMessageForMe: async (id, user) => { const { error } = await supabase.from("message_hidden_for").insert({ message_id: id, user_id: user.id }); if (error && error.code !== "23505") throw error; },
   ensureChannel: async (user, name) => { let { data: existing } = await supabase.from("conversations").select("id").eq("name", name).maybeSingle(); if (existing) return existing.id; const { data } = await supabase.from("conversations").insert({ kind: "channel", name, sector: name, created_by: user.id }).select("id").single(); return data.id; },
   watchMessages,
-  sendMessage: async (user, conversationId, text) => { await supabase.from("messages").insert({ conversation_id: conversationId, text, author_id: user.id }); await supabase.from("conversations").update({ updated_at: new Date().toISOString(), last_message: text }).eq("id", conversationId); }
+  sendMessage: async (user, conversationId, text, replyTo = null) => {
+    const { error } = await supabase.from("messages").insert({ conversation_id: conversationId, text, author_id: user.id, reply_to: replyTo });
+    if (error) throw error;
+    const { error: updateError } = await supabase.from("conversations").update({ updated_at: new Date().toISOString(), last_message: text }).eq("id", conversationId);
+    if (updateError) throw updateError;
+  }
 };
 
 supabase.auth.onAuthStateChange(async (_event, session) => {
