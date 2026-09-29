@@ -266,6 +266,7 @@ body { color: var(--ink); background: #f5f5ef; }
 .profile-details dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 650; }
 .password-form { padding: 8px 20px 20px; }
 .password-form .field { margin: 12px 0; }
+.profile-reauth-field[hidden] { display: none; }
 .password-form .field small { color: var(--muted); font-size: 11px; }
 .profile-form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
 .profile-feedback { display: none; margin-top: 10px; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
