@@ -1,4 +1,5 @@
 {
+  "functions": { "source": "functions" },
   "hosting": {
     "public": ".",
     "ignore": [
@@ -25,4 +26,3 @@
     "rules": "firestore.rules"
   }
 }
-
