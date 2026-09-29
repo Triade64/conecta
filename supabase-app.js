@@ -164,9 +164,8 @@ window.conectaFirebase = {
     let imagePath = data.removeImage ? null : (oldRow?.image_path || null);
     let uploadedPath = null;
     if (data.imageFile) {
-      const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
-      if (!extensions[data.imageFile.type] || data.imageFile.size > 5 * 1024 * 1024) throw new Error("Use uma imagem JPG, PNG ou WEBP de até 5 MB.");
-      uploadedPath = `${id}/${crypto.randomUUID()}.${extensions[data.imageFile.type]}`;
+      if (data.imageFile.type !== "image/webp" || data.imageFile.size > 900 * 1024) throw new Error("A imagem precisa estar otimizada em WebP e ter até 900 KB.");
+      uploadedPath = `${id}/${crypto.randomUUID()}.webp`;
       const { error: uploadError } = await supabase.storage.from("global-announcements").upload(uploadedPath, data.imageFile, { contentType: data.imageFile.type, cacheControl: "3600", upsert: false });
       if (uploadError) throw uploadError;
       imagePath = uploadedPath;
