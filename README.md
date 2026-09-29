@@ -5,15 +5,11 @@ Base inicial da aplicação interna do escritório, com foco em comunicação r�
 ## Estado atual
 
 - `index.html`: aplicação navegável e responsiva.
-- Tela de login com Firebase Authentication por e-mail e senha.
-- Recuperação de senha por e-mail.
-- Encerramento de sessão pelo perfil do usuário.
-- Inicialização do Firebase App, Analytics, Authentication e Firestore.
-- `data/seed.json`: dados iniciais genéricos para demonstração.
+- `data/seed.json`: estrutura de setores e permissões, sem usuários fictícios.
 - `docs/architecture.md`: arquitetura funcional e plano de evolução.
 - `public/conecta-prototipo.html`: cópia de referência da versão anterior.
 
-O protótipo ainda mantém avisos, conversas e lembretes locais no navegador. A próxima camada substitui esse armazenamento por dados compartilhados no Firestore.
+O protótipo usa `localStorage` para manter os dados no navegador. Isso permite testar a experiência sem servidor. A próxima camada substitui esse armazenamento por uma API e banco compartilhado.
 
 ## Firebase Hosting
 
@@ -22,19 +18,21 @@ O arquivo `firebase.json` já está preparado para publicar a aplicação como s
 ```bash
 npm install -g firebase-tools
 firebase login
-firebase deploy --project triadechat --only hosting
+firebase use --add
+firebase deploy --only hosting
 ```
 
-O projeto está associado ao Firebase `triadechat`. As regras iniciais do Firestore permitem acesso somente a usuários autenticados; as permissões por setor serão refinadas no backend.
+O projeto já está associado ao Firebase `triadechat`. O frontend inicializa Firebase App, Analytics, Authentication e Firestore. As regras iniciais do Firestore permitem acesso somente a usuários autenticados; as permissões por setor serão refinadas junto com o login.
 
 ## Como abrir
 
-Abra `index.html` no navegador. Para testar o login, é necessário habilitar o provedor “E-mail/senha” no Firebase Authentication e criar um usuário no console do Firebase.
+Abra `index.html` no navegador. Não há dependências obrigatórias para executar a versão atual.
 
 ## Próxima implementação
 
-1. Perfis de funcionário e setores no Firestore.
-2. Conversas e mensagens compartilhadas.
-3. Avisos e lembretes sincronizados.
-4. Permissões por setor.
-5. Atualização em tempo real e notificações.
+1. Autenticação e perfis de funcionário.
+2. API para usuários, setores, conversas, mensagens, avisos e lembretes.
+3. Banco compartilhado e controle de permissões.
+4. Atualização em tempo real e notificações.
+5. Publicação privada para a equipe.
+
