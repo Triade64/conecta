@@ -258,6 +258,128 @@ body {
 
 body { color: var(--ink); background: #f5f5ef; }
 .sidebar { background: #fff; border-color: var(--line); }
+
+/* Mobile-first refinements: touch targets, safe areas and a usable chat viewport. */
+@media (max-width: 760px) {
+  html { -webkit-text-size-adjust: 100%; }
+  body { min-width: 320px; }
+  .app, .app.authenticated { display: block; min-height: 100dvh; }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    height: 58px;
+    padding: 0 max(12px, env(safe-area-inset-right)) 0 max(12px, env(safe-area-inset-left));
+    background: #f5f5eff2;
+    backdrop-filter: blur(12px);
+  }
+  .top-actions { gap: 8px; }
+  .icon-btn, .mobile-menu { width: 42px; height: 42px; flex: 0 0 42px; }
+  .content { padding: 20px 14px calc(28px + env(safe-area-inset-bottom)); }
+  .welcome { align-items: stretch; flex-direction: column; margin-bottom: 18px; }
+  .welcome h1 { font-size: clamp(21px, 6vw, 25px); }
+  .welcome .primary { width: 100%; min-height: 44px; }
+  .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-bottom: 15px; }
+  .stat { min-width: 0; padding: 12px; border-radius: 13px; }
+  .stat-top { gap: 6px; font-size: 11px; }
+  .stat strong { font-size: 21px; }
+  .stat small { font-size: 10px; }
+  .grid, .right-col { gap: 13px; }
+  .card { border-radius: 14px; }
+  .card-head { gap: 9px; padding: 14px; }
+  .card-head > * { min-width: 0; }
+  .view-toolbar { align-items: stretch; flex-direction: column; gap: 12px; }
+  .view-toolbar .primary { min-height: 44px; }
+  .back-dashboard { min-height: 42px; }
+  .conversation-layout {
+    height: calc(100dvh - 148px);
+    min-height: 410px;
+    max-height: 760px;
+    grid-template-rows: 76px minmax(0, 1fr);
+    overflow: hidden;
+  }
+  .conversation-list {
+    display: flex;
+    flex-direction: row;
+    gap: 6px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 8px;
+    border: 0;
+    border-bottom: 1px solid var(--line);
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+  .conv-item { flex: 0 0 190px; min-width: 190px; padding: 8px; align-items: center; }
+  .conv-item .chat-snippet { max-width: 130px; }
+  .conversation-chat { min-height: 0; height: 100%; }
+  .chat-head { padding: 12px 14px; }
+  .chat-messages { min-height: 0; padding: 12px; gap: 9px; }
+  .bubble { max-width: 88%; font-size: 14px; }
+  .message-stack { max-width: calc(100% - 34px); }
+  .composer { padding: 9px; padding-bottom: max(9px, env(safe-area-inset-bottom)); }
+  .composer input, .field input, .field textarea, .field select {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  .composer .primary { min-width: 72px; min-height: 44px; }
+  .modal-back { align-items: flex-end; padding: 0; }
+  .modal {
+    width: 100%;
+    max-height: min(88dvh, 760px);
+    overflow-y: auto;
+    border-radius: 18px 18px 0 0;
+    padding: 22px 18px calc(18px + env(safe-area-inset-bottom));
+  }
+  .modal-actions { position: sticky; bottom: -18px; background: white; padding: 12px 0 0; }
+  .modal-actions button { min-height: 44px; }
+  .user-table { min-width: 620px; }
+}
+
+@media (max-width: 380px) {
+  .content { padding-inline: 10px; }
+  .stat { padding: 10px; }
+  .stat-top { font-size: 10px; }
+  .search { width: 42px; height: 42px; }
+  .conv-item { flex-basis: 168px; min-width: 168px; }
+}
+
+.mobile-nav-backdrop { display: none; }
+@media (max-width: 760px) {
+  .sidebar {
+    position: fixed;
+    z-index: 12;
+    inset: 0 auto 0 0;
+    width: min(86vw, 330px);
+    height: 100dvh;
+    overflow-y: auto;
+    display: flex;
+    gap: 21px;
+    padding: max(20px, env(safe-area-inset-top)) 16px max(18px, env(safe-area-inset-bottom));
+    box-shadow: 16px 0 48px #1d1d1b1c;
+    transform: translateX(-105%);
+    transition: transform .22s ease;
+    visibility: hidden;
+  }
+  .app.mobile-nav-open .sidebar { transform: translateX(0); visibility: visible; }
+  .mobile-nav-backdrop {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 11;
+    border: 0;
+    background: #1d1d1b66;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity .22s ease, visibility .22s ease;
+  }
+  .app.mobile-nav-open .mobile-nav-backdrop { opacity: 1; visibility: visible; }
+  body.mobile-nav-open { overflow: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar, .mobile-nav-backdrop { transition: none; }
+}
 .topbar { background: #fffdf9; border-color: var(--line); }
 .content { color: var(--ink); }
 .brand { min-width: 0; gap: 8px; }
