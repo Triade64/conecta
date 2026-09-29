@@ -7,7 +7,7 @@
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
   import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-analytics.js";
   import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
-  import { getFirestore } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+  import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAT43RHboXxC6eiMeSWlgT3PC5NOAntmII",
@@ -23,11 +23,31 @@
   const auth = getAuth(firebaseApp);
   const db = getFirestore(firebaseApp);
   const analytics = await analyticsSupported().then(ok => ok ? getAnalytics(firebaseApp) : null).catch(() => null);
-  window.conectaFirebase = { app: firebaseApp, auth, db, analytics, config: firebaseConfig, signInWithEmailAndPassword, sendPasswordResetEmail, signOut };
+  let stopDataSync = () => {};
+  const startDataSync = user => {
+    stopDataSync();
+    const stopNotices = onSnapshot(query(collection(db, "notices")), snapshot => {
+      const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+      window.dispatchEvent(new CustomEvent("conecta-notices-sync", { detail: items }));
+    });
+    const stopReminders = onSnapshot(query(collection(db, "reminders"), where("ownerId", "==", user.uid)), snapshot => {
+      const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+      window.dispatchEvent(new CustomEvent("conecta-reminders-sync", { detail: items }));
+    });
+    stopDataSync = () => { stopNotices(); stopReminders(); };
+  };
+  window.conectaFirebase = {
+    app: firebaseApp, auth, db, analytics, config: firebaseConfig,
+    signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
+    startDataSync,
+    addNotice: (user, data) => addDoc(collection(db, "notices"), { ...data, authorId: user.uid, createdAt: serverTimestamp() }),
+    addReminder: (user, data) => addDoc(collection(db, "reminders"), { ...data, ownerId: user.uid, createdAt: serverTimestamp() })
+  };
   onAuthStateChanged(auth, user => {
     document.querySelector("#authScreen")?.classList.toggle("visible", !user);
     document.querySelector(".app")?.classList.toggle("authenticated", !!user);
     document.querySelector("#authLoading")?.classList.remove("visible");
+    if (user) startDataSync(user); else stopDataSync();
     if (user) {
       const label = user.displayName || user.email?.split("@")[0] || "Colaborador";
       const name = document.querySelector("#currentUserName");
@@ -104,9 +124,12 @@ function renderConversations(filter){const list=filter?contacts.filter(c=>c.name
 function renderNotices(){const activeSector=$("#noticeFilter")?.value||"Todos";const filtered=activeSector==="Todos"?notices:notices.filter(n=>n.sector===activeSector);$("#viewPanel").innerHTML='<div class="view-toolbar"><div><h2>Quadro de avisos</h2><p>Comunicados importantes para toda a equipe.</p></div><button class="primary" id="newNotice">＋ Novo aviso</button></div><div class="filter-row" style="margin-bottom:15px"><select class="filter-pill" id="noticeFilter"><option>Todos</option><option>Geral</option><option>Fiscal</option><option>Contábil</option><option>Departamento Pessoal</option><option>Atendimento</option></select></div><div class="notice-list">'+(filtered.length?filtered.map(n=>'<article class="notice-card"><h3>'+n.title+' <span class="tag '+(n.tag==="EQUIPE"?"green":n.tag==="SISTEMAS"?"purple":"")+'">'+n.tag+'</span></h3><div class="post-meta"><span>'+n.sector+'</span><span>'+n.time+'</span></div><p>'+n.text+'</p></article>').join(""):'<div class="empty">Nenhum aviso encontrado para este setor.</div>')+'</div>';$("#newNotice").onclick=()=>openModal("notice");$("#noticeFilter").onchange=renderNotices}
 function renderView(view){if(view==="Visão geral"){showDashboard();return}document.querySelector(".welcome").style.display="none";document.querySelector(".stats").style.display="none";document.querySelector(".grid").style.display="none";$("#viewPanel").classList.add("show");$("#backDashboard").classList.add("show");$("#crumb").textContent=view;if(view==="Conversas"||["Geral","Fiscal","Contábil","Departamento Pessoal","Atendimento"].includes(view)){selectedContact=Math.max(0,contacts.findIndex(c=>c.name===view));renderConversations()}else if(view==="Quadro de avisos")renderNotices();else if(view==="Lembretes"){$("#viewPanel").innerHTML='<div class="view-toolbar"><div><h2>Lembretes</h2><p>Acompanhe as tarefas pendentes do seu dia.</p></div><button class="primary" id="viewNewReminder">＋ Novo lembrete</button></div><div class="card"><div class="reminders" id="fullReminders"></div></div>';const box=$("#fullReminders");box.innerHTML=$("#reminders").innerHTML;box.querySelectorAll(".check").forEach((b,i)=>b.onclick=()=>{reminders[i].done=!reminders[i].done;save();renderReminders();renderView("Lembretes")});$("#viewNewReminder").onclick=()=>openModal("reminder")}}
 $("#newBtn").onclick=()=>openModal("message");$("#reminderBtn").onclick=()=>openModal("reminder");$("#cancelBtn").onclick=()=>$("#modalBack").classList.remove("show");$("#modalBack").onclick=e=>{if(e.target===$("#modalBack"))$("#modalBack").classList.remove("show")};$("#backDashboard").onclick=showDashboard;
-$("#form").onsubmit=e=>{e.preventDefault();const type=e.currentTarget.dataset.type;if(type==="reminder"){const d=new Date($("#when").value);reminders.push({title:$("#title").value,time:d.toLocaleDateString("pt-BR")+" · "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),done:false});save();renderReminders();showToast("Lembrete adicionado")}else if(type==="notice"){notices.unshift({title:$("#title").value,sector:$("#sector").value,tag:"NOVO",text:$("#message").value,time:"Agora"});save();showToast("Aviso publicado");if($("#viewPanel").classList.contains("show"))renderNotices()}else{const dest=$("#destination").value;let c=contacts.find(x=>x.name===dest);if(!c){c={name:dest,initials:dest.split(" ").map(x=>x[0]).join("").slice(0,2),tone:"",type:"Canal do setor",snippet:"",messages:[]};contacts.push(c)}c.messages.push({text:$("#message").value,time:"Agora",mine:true});c.snippet="Você: "+$("#message").value;save();showToast("Mensagem enviada para "+dest)}$("#modalBack").classList.remove("show")};
+$("#form").onsubmit=async e=>{e.preventDefault();const type=e.currentTarget.dataset.type,fb=window.conectaFirebase,user=fb?.auth.currentUser;if(type==="reminder"){const d=new Date($("#when").value),data={title:$("#title").value,time:d.toLocaleDateString("pt-BR")+" · "+d.toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"}),done:false};if(user){try{await fb.addReminder(user,data);showToast("Lembrete salvo para a equipe")}catch(err){reminders.push(data);save();renderReminders();showToast("Lembrete salvo localmente")}}else{reminders.push(data);save();renderReminders();showToast("Lembrete adicionado")}}else if(type==="notice"){const data={title:$("#title").value,sector:$("#sector").value,tag:"NOVO",text:$("#message").value};if(user){try{await fb.addNotice(user,data);showToast("Aviso publicado para a equipe")}catch(err){notices.unshift({...data,time:"Agora"});save();showToast("Aviso salvo localmente")}}else{notices.unshift({...data,time:"Agora"});save();showToast("Aviso publicado")}if($("#viewPanel").classList.contains("show"))renderNotices()}else{const dest=$("#destination").value;let c=contacts.find(x=>x.name===dest);if(!c){c={name:dest,initials:dest.split(" ").map(x=>x[0]).join("").slice(0,2),tone:"",type:"Canal do setor",snippet:"",messages:[]};contacts.push(c)}c.messages.push({text:$("#message").value,time:"Agora",mine:true});c.snippet="Você: "+$("#message").value;save();showToast("Mensagem enviada para "+dest)}$("#modalBack").classList.remove("show")};
 document.querySelectorAll("[data-view]").forEach(b=>b.onclick=()=>{document.querySelectorAll(".nav button,.channel").forEach(x=>x.classList.remove("active"));b.classList.add("active");renderView(b.dataset.view)});$("#searchBtn").onclick=()=>{const q=prompt("Buscar mensagens, pessoas ou avisos:");if(q){const hit=contacts.find(c=>c.name.toLowerCase().includes(q.toLowerCase()));if(hit){selectedContact=contacts.indexOf(hit);renderView("Conversas")}showToast(hit?"Conversa encontrada":"Busca concluída")}};document.addEventListener("keydown",e=>{if(e.key==="Escape")$("#modalBack").classList.remove("show")});renderReminders();
 function authMessage(message){const box=$("#authError");box.textContent=message;box.classList.add("visible")}
+function syncDate(value){if(value?.toDate)return value.toDate().toLocaleDateString("pt-BR")+" · "+value.toDate().toLocaleTimeString("pt-BR",{hour:"2-digit",minute:"2-digit"});return value||""}
+window.addEventListener("conecta-notices-sync",e=>{notices=e.detail.map(n=>({...n,time:syncDate(n.createdAt)||n.time||"Agora"}));localStorage.setItem("conecta-notices",JSON.stringify(notices));$("#noticeCount").textContent=notices.length;if($("#viewPanel").classList.contains("show")&&$("#crumb").textContent==="Quadro de avisos")renderNotices()})
+window.addEventListener("conecta-reminders-sync",e=>{reminders=e.detail.map(r=>({...r,time:syncDate(r.createdAt)||r.time||"",done:!!r.done}));localStorage.setItem("conecta-reminders",JSON.stringify(reminders));renderReminders()})
 function bindFirebaseAuth(){const fb=window.conectaFirebase;if(!fb)return;$("#authForm").onsubmit=async e=>{e.preventDefault();$("#authError").classList.remove("visible");try{await fb.signInWithEmailAndPassword(fb.auth,$("#authEmail").value.trim(),$("#authPassword").value);showToast("Login realizado")}catch(err){authMessage("Não foi possível entrar. Confira o e-mail e a senha.")}};$("#resetPassword").onclick=async()=>{const email=$("#authEmail").value.trim();if(!email){authMessage("Informe seu e-mail para redefinir a senha.");return}try{await fb.sendPasswordResetEmail(fb.auth,email);authMessage("Enviamos as instruções para o seu e-mail.")}catch(err){authMessage("Não foi possível enviar a redefinição para este e-mail.")}};$("#logoutBtn").onclick=()=>fb.signOut(fb.auth)}
 window.addEventListener("conecta-firebase-ready",bindFirebaseAuth);if(window.conectaFirebase)bindFirebaseAuth();
 </script></body></html>
