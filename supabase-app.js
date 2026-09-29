@@ -56,12 +56,9 @@ function startDataSync(user) {
   stopDataSync();
   loadData(user);
   const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "global_announcements" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).subscribe();
-  const liveUsers = new Set();
   const liveChannel = supabase.channel("conecta-presence", { config: { private: true, presence: { key: user.id } } })
     .on("presence", { event: "sync" }, () => {
-      liveUsers.clear();
-      Object.values(liveChannel.presenceState()).flat().forEach(session => { if (session.userId) liveUsers.add(session.userId); });
-      dispatch("conecta-online-count-sync", liveUsers.size);
+      dispatch("conecta-online-count-sync", Object.keys(liveChannel.presenceState()).length);
     })
     .subscribe(async status => {
       if (status === "SUBSCRIBED") {
