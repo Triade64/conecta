@@ -46,10 +46,10 @@ create policy global_announcement_update_admin on public.global_announcements fo
 create policy global_announcement_delete_admin on public.global_announcements for delete to authenticated
   using (private.is_active_admin());
 
--- Images are private, limited to common image formats and 5 MiB each.
+-- Images are private; client-optimized files are capped at 1 MiB in Storage.
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
-values ('global-announcements', 'global-announcements', false, 5242880, array['image/jpeg','image/png','image/webp']::text[])
-on conflict (id) do update set public = false, file_size_limit = 5242880,
+values ('global-announcements', 'global-announcements', false, 1048576, array['image/jpeg','image/png','image/webp']::text[])
+on conflict (id) do update set public = false, file_size_limit = 1048576,
   allowed_mime_types = array['image/jpeg','image/png','image/webp']::text[];
 drop policy if exists global_announcement_images_read on storage.objects;
 drop policy if exists global_announcement_images_insert_admin on storage.objects;
