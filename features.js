@@ -398,11 +398,14 @@
     picker.hidden = true;
     picker.setAttribute("role", "group");
     picker.setAttribute("aria-label", "Emojis");
-    let selection = [input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length];
-    const saveSelection = () => { selection = [input.selectionStart ?? selection[0], input.selectionEnd ?? selection[1]]; };
-    input.addEventListener("select", saveSelection);
+    let savedRange = null;
+    const saveSelection = () => {
+      const selection = window.getSelection();
+      if (selection?.rangeCount && input.contains(selection.anchorNode)) savedRange = selection.getRangeAt(0).cloneRange();
+    };
     input.addEventListener("keyup", saveSelection);
     input.addEventListener("click", saveSelection);
+    input.addEventListener("input", saveSelection);
     emojis.forEach(emoji => {
       const choice = document.createElement("button");
       choice.type = "button";
@@ -412,8 +415,21 @@
       choice.addEventListener("pointerdown", event => { event.preventDefault(); saveSelection(); });
       choice.addEventListener("click", () => {
         input.focus();
-        input.setRangeText(emoji, selection[0], selection[1], "end");
-        saveSelection();
+        let range = savedRange?.cloneRange();
+        if (!range || !input.contains(range.startContainer)) {
+          range = document.createRange();
+          range.selectNodeContents(input);
+          range.collapse(false);
+        }
+        range.deleteContents();
+        const node = document.createTextNode(emoji);
+        range.insertNode(node);
+        range.setStartAfter(node);
+        range.collapse(true);
+        const selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        savedRange = range.cloneRange();
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
       picker.append(choice);
@@ -429,8 +445,122 @@
     });
   };
   const emojiStyle = document.createElement("style");
-  emojiStyle.textContent = ".emoji-compose-tools{position:relative;display:flex;justify-content:flex-end;padding:4px 10px 0}.emoji-toggle{border:0;background:transparent;border-radius:8px;padding:5px 8px;font-size:21px;cursor:pointer}.emoji-toggle:hover{background:#edf2eb}.emoji-picker{position:absolute;right:8px;bottom:42px;z-index:8;width:min(300px,calc(100vw - 60px));padding:8px;background:#fff;border:1px solid #dfe5dc;border-radius:12px;box-shadow:0 10px 28px #18231924;display:grid;grid-template-columns:repeat(6,1fr);gap:3px}.emoji-picker[hidden]{display:none}.emoji-choice{border:0;background:transparent;border-radius:7px;padding:6px 2px;font-size:21px;cursor:pointer}.emoji-choice:hover{background:#edf2eb}.profile-photo-area{display:flex;align-items:center;gap:14px;margin:16px 0}.profile-photo-preview[hidden]{display:none!important}.profile-photo-preview{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;flex:0 0 76px;background:#e8eee7;color:#223e2a;font-weight:700;font-size:22px;object-fit:cover}.profile-photo-controls{display:grid;gap:6px}.profile-photo-controls small,.notification-setting small{color:#6f746d}.notification-setting{display:grid;gap:12px}.profile-feedback{margin-top:8px}.profile-grid{align-items:start}";
+  emojiStyle.textContent = ".emoji-compose-tools{position:relative;display:flex;justify-content:flex-end;padding:4px 10px 0}.emoji-toggle{border:0;background:transparent;border-radius:8px;padding:5px 8px;font-size:21px;cursor:pointer}.emoji-toggle:hover{background:#edf2eb}.emoji-picker{position:absolute;right:8px;bottom:42px;z-index:8;width:min(300px,calc(100vw - 60px));padding:8px;background:#fff;border:1px solid #dfe5dc;border-radius:12px;box-shadow:0 10px 28px #18231924;display:grid;grid-template-columns:repeat(6,1fr);gap:3px}.emoji-picker[hidden]{display:none}.emoji-choice{border:0;background:transparent;border-radius:7px;padding:6px 2px;font-size:21px;cursor:pointer}.emoji-choice:hover{background:#edf2eb}.composer .chat-rich-input{flex:1;min-height:40px;max-height:130px;overflow:auto;border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none;white-space:pre-wrap;overflow-wrap:anywhere}.composer .chat-rich-input:focus{border-color:#9aaf9a;box-shadow:0 0 0 2px #e8eee7}.composer .chat-rich-input:empty:before{content:attr(data-placeholder);color:#8b928d}.chat-gif-preview{display:flex;align-items:center;gap:10px;padding:8px 12px;border-top:1px solid var(--line)}.chat-gif-preview[hidden]{display:none}.chat-gif-preview img{max-width:170px;max-height:110px;object-fit:contain;border-radius:8px}.chat-gif-preview button{border:0;background:transparent;border-radius:8px;padding:5px 8px;cursor:pointer}.bubble .message-attachment{display:block;max-width:min(240px,70vw);max-height:320px;border-radius:10px;object-fit:contain;margin-bottom:4px}.profile-photo-area{display:flex;align-items:center;gap:14px;margin:16px 0}.profile-photo-preview[hidden]{display:none!important}.profile-photo-preview{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;flex:0 0 76px;background:#e8eee7;color:#223e2a;font-weight:700;font-size:22px;object-fit:cover}.profile-photo-controls{display:grid;gap:6px}.profile-photo-controls small,.notification-setting small{color:#6f746d}.notification-setting{display:grid;gap:12px}.profile-feedback{margin-top:8px}.profile-grid{align-items:start}";
   document.head.append(emojiStyle);
+
+  const getChatDraftText = input => (input?.innerText || input?.textContent || "").replace(/\\u00a0/g, " ").trim();
+  const bindGifPaste = conversation => {
+    const form = byId("composer"), input = byId("chatInput");
+    if (!form || !input || form.dataset.gifPasteReady) return;
+    form.dataset.gifPasteReady = "true";
+    const preview = document.createElement("div");
+    preview.className = "chat-gif-preview";
+    preview.hidden = true;
+    const image = document.createElement("img");
+    image.alt = "GIF anexado";
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.textContent = "Remover GIF";
+    remove.addEventListener("click", () => {
+      delete form.dataset.attachmentPath;
+      delete form.dataset.attachmentUrl;
+      preview.hidden = true;
+      image.removeAttribute("src");
+    });
+    preview.append(image, remove);
+    form.before(preview);
+    const attachRemoteGif = url => {
+      try {
+        const parsed = new URL(url);
+        if (parsed.protocol !== "https:" || !/\\.gif(?:$|[?#])/i.test(parsed.href)) return false;
+        delete form.dataset.attachmentPath;
+        form.dataset.attachmentUrl = parsed.href;
+        image.src = parsed.href;
+        preview.hidden = false;
+        return true;
+      } catch { return false; }
+    };
+    const attachGifFile = async file => {
+      if (file.type !== "image/gif") return false;
+      if (file.size > 8 * 1024 * 1024) throw new Error("O GIF precisa ter até 8 MB.");
+      preview.hidden = false;
+      image.src = URL.createObjectURL(file);
+      const result = await window.conectaFirebase.uploadChatGif(currentUser(), file);
+      form.dataset.attachmentPath = result.path;
+      delete form.dataset.attachmentUrl;
+      image.src = result.url;
+      return true;
+    };
+    const handleClipboard = async event => {
+      const clipboard = event.clipboardData;
+      if (!clipboard) return;
+      const gifItem = [...clipboard.items].find(item => item.kind === "file" && item.type === "image/gif");
+      const html = clipboard.getData("text/html");
+      let source = "";
+      if (html) {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        source = doc.querySelector("img")?.getAttribute("src") || "";
+      }
+      const uri = clipboard.getData("text/uri-list").split(/\\r?\\n/).find(line => line && !line.startsWith("#")) || "";
+      const candidate = source || uri;
+      if (gifItem || candidate.startsWith("data:image/gif")) {
+        event.preventDefault();
+        try {
+          let file = gifItem?.getAsFile() || null;
+          if (!file && candidate.startsWith("data:image/gif")) {
+            const response = await fetch(candidate);
+            file = await response.blob();
+          }
+          if (file) await attachGifFile(file);
+          else if (!attachRemoteGif(candidate)) showToast("Não foi possível ler este GIF do painel do Windows.");
+        } catch (error) { preview.hidden = true; showToast(error?.message || "Não foi possível anexar o GIF."); }
+        return;
+      }
+      if (attachRemoteGif(candidate)) { event.preventDefault(); return; }
+      const plain = clipboard.getData("text/plain");
+      if (plain) {
+        event.preventDefault();
+        document.execCommand("insertText", false, plain);
+      }
+    };
+    input.addEventListener("paste", handleClipboard);
+    input.addEventListener("keydown", event => {
+      if (event.key === "Enter" && !event.shiftKey) {
+        event.preventDefault();
+        form.requestSubmit();
+      }
+    });
+    input.setAttribute("autocomplete", "off");
+    input.setAttribute("autocorrect", "off");
+    input.setAttribute("spellcheck", "false");
+  };
+  document.addEventListener("submit", async event => {
+    const form = event.target;
+    if (form?.id !== "composer") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const conversation = contacts[selectedContact];
+    const user = currentUser();
+    const input = byId("chatInput");
+    const text = getChatDraftText(input);
+    const attachmentPath = form.dataset.attachmentPath || null;
+    const attachmentUrl = form.dataset.attachmentUrl || null;
+    if (!conversation?.firestoreId || !user || (!text && !attachmentPath && !attachmentUrl)) return;
+    const button = form.querySelector('button[type="submit"]');
+    if (button) { button.disabled = true; button.textContent = "Enviando…"; }
+    try {
+      await window.conectaFirebase.sendMessage(user, conversation.firestoreId, text, conversation.replyTarget?.id || null, attachmentPath, attachmentUrl);
+      conversation.replyTarget = null;
+      input.replaceChildren();
+      delete form.dataset.attachmentPath;
+      delete form.dataset.attachmentUrl;
+      const preview = document.querySelector(".chat-gif-preview");
+      if (preview) preview.hidden = true;
+      await refreshMessages(conversation);
+      showToast("Mensagem enviada.");
+    } catch (error) { showError(error); }
+    finally { if (button) { button.disabled = false; button.textContent = "Enviar"; } }
+  }, true);
 
   const baseRenderConversations = renderConversations;
   renderConversations = window.renderConversations = (filter, watch = true) => {
@@ -438,6 +568,7 @@
     updateUnreadBadges();
     const conversation = contacts[selectedContact];
     addEmojiPicker(conversation || {});
+    bindGifPaste(conversation || {});
     document.querySelectorAll(".conversation-list .conv-item").forEach(button => {
       const item = contacts[Number(button.dataset.contact)];
       const avatar = button.querySelector(".person");
@@ -457,6 +588,7 @@
         replyTo: source.replyTo || source.reply_to || message.replyTo,
         editedAt: source.editedAt || source.edited_at || message.editedAt,
         deletedAt: source.deletedAt || source.deleted_at || message.deletedAt,
+        attachmentUrl: source.attachmentUrl || source.attachment_url || message.attachmentUrl || "",
         mine: (source.authorId || source.author_id || message.authorId) === currentUserId()
       };
     });
@@ -477,9 +609,22 @@
         const time = document.createElement("small");
         time.textContent = message.time || "";
         bubble.append(time);
-      } else if (message.editedAt) {
-        const time = bubble.querySelector("small");
-        if (time && !time.textContent.includes("editada")) time.textContent += " · editada";
+      } else {
+        if (message.attachmentUrl) {
+          const attachment = document.createElement("img");
+          attachment.className = "message-attachment";
+          attachment.alt = "GIF animado";
+          attachment.loading = "lazy";
+          attachment.src = message.attachmentUrl;
+          const time = bubble.querySelector("small");
+          bubble.replaceChildren(attachment);
+          if (message.text && message.text !== "GIF") bubble.append(document.createTextNode(message.text));
+          if (time) bubble.append(time);
+        }
+        if (message.editedAt) {
+          const time = bubble.querySelector("small");
+          if (time && !time.textContent.includes("editada")) time.textContent += " · editada";
+        }
       }
 
       if (message.replyTo && !stack.querySelector(".reply-quote")) {
