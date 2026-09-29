@@ -23,8 +23,8 @@ async function ensureUserProfile(user) {
 
 async function loadData(user) {
   const profile = await ensureUserProfile(user);
-  let remindersQuery = supabase.from("reminders").select("*").order("created_at", { ascending: false });
-  if (profile.role !== "admin" || profile.active !== true) remindersQuery = remindersQuery.eq("owner_id", user.id);
+  // Let RLS decide the visible rows: owners see their reminders and active admins see all.
+  const remindersQuery = supabase.from("reminders").select("*").order("created_at", { ascending: false });
   const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }] = await Promise.all([
     supabase.from("notices").select("*").order("created_at", { ascending: false }),
     remindersQuery,
