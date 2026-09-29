@@ -116,6 +116,33 @@
   const baseRenderReminders = renderReminders;
   renderReminders = window.renderReminders = () => {
     baseRenderReminders();
+    // Completion must be persisted in Supabase; the legacy renderer only changed local state.
+    document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach(row => {
+      const box = row.closest("#fullReminders") ? byId("fullReminders") : byId("reminders");
+      const listIndex = [...box.querySelectorAll(".reminder")].indexOf(row);
+      const item = reminders[listIndex];
+      const check = row.querySelector(".check");
+      if (!check) return;
+      check.onclick = async () => {
+        if (!item?.id) {
+          showToast("Este lembrete ainda não foi sincronizado.");
+          return;
+        }
+        const done = !item.done;
+        check.disabled = true;
+        try {
+          await window.conectaFirebase.updateReminder(item.id, { done });
+          reminders = reminders.map(reminder => reminder.id === item.id ? { ...reminder, done } : reminder);
+          save();
+          renderReminders();
+          if (byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Lembretes") renderView("Lembretes");
+          showToast(done ? "Lembrete concluído." : "Lembrete reaberto.");
+        } catch (error) {
+          showError(error);
+          check.disabled = false;
+        }
+      };
+    });
     const uid = currentUserId();
     const admin = isActiveAdmin();
     document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach((row, index) => {
