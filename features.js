@@ -542,20 +542,20 @@
     writeCount("onlineCount", count);
     if (byId("onlineStatNote")) byId("onlineStatNote").textContent = count ? `${count} ${plural(count, "pessoa conectada", "pessoas conectadas")}` : "nenhum usuário conectado";
   });
-  let shownAnnouncementKey = "";
-  let latestAnnouncement = null;
+  let shownAnnouncementKeys = new Set();
+  let scheduledAnnouncements = [];
+  let adminAnnouncements = [];
+  let pendingAnnouncements = [];
+  let activeAnnouncement = null;
   const announcementStyle = document.createElement("style");
   announcementStyle.textContent = ".global-announcement{position:fixed;inset:0;z-index:12000;display:grid;place-items:center;padding:20px;background:#132217a8}.global-announcement[hidden]{display:none}.global-announcement-card{width:min(520px,100%);padding:28px;background:#fff;border-radius:20px;box-shadow:0 24px 80px #0004}.global-announcement-card h2{margin:0 0 12px;font-size:21px;color:#223e2a}.global-announcement-card p{white-space:pre-wrap;line-height:1.65;color:#596259;margin:0}.global-announcement-card .primary{display:block;margin:24px 0 0 auto}.global-announcement-admin{margin:18px 0}.global-announcement-admin .admin-form{padding:18px 20px}.global-announcement-admin .admin-actions{padding:4px 20px 20px;gap:10px}";
   document.head.append(announcementStyle);
-  window.addEventListener("conecta-global-announcement-sync", event => {
-    const announcement = event.detail;
-    latestAnnouncement = announcement;
-    if (announcement && byId("globalAnnouncementTitleInput") && !byId("globalAnnouncementTitleInput").value) byId("globalAnnouncementTitleInput").value = announcement.title || "";
-    if (announcement && byId("globalAnnouncementBodyInput") && !byId("globalAnnouncementBodyInput").value) byId("globalAnnouncementBodyInput").value = announcement.body || "";
-    if (!announcement?.is_active || !announcement.updated_at) { if (byId("globalAnnouncementModal")) byId("globalAnnouncementModal").hidden = true; return; }
-    const key = `${currentUserId() || ""}:${announcement.updated_at}`;
-    if (key === shownAnnouncementKey) return;
-    shownAnnouncementKey = key;
+  const renderNextGlobalAnnouncement = () => {
+    if (activeAnnouncement || !pendingAnnouncements.length) return;
+    activeAnnouncement = pendingAnnouncements.shift();
+    const announcement = activeAnnouncement;
+    const key = `${announcement.id}:${announcement.updated_at}`;
+    shownAnnouncementKeys.add(key);
     let modal = byId("globalAnnouncementModal");
     if (!modal) {
       modal = document.createElement("div"); modal.id = "globalAnnouncementModal"; modal.className = "global-announcement";
@@ -565,35 +565,95 @@
     const card = document.createElement("section"); card.className = "global-announcement-card";
     const title = document.createElement("h2"); title.id = "globalAnnouncementTitle"; title.textContent = announcement.title || "Aviso da administração";
     const body = document.createElement("p"); body.textContent = announcement.body || "";
-    const confirm = document.createElement("button"); confirm.className = "primary"; confirm.textContent = "Entendi"; confirm.addEventListener("click", () => { modal.hidden = true; });
+    if (announcement.image_url) {
+      const image = document.createElement("img"); image.src = announcement.image_url; image.alt = announcement.title ? `Imagem: ${announcement.title}` : "Imagem do aviso";
+      image.style.cssText = "display:block;max-width:100%;max-height:280px;object-fit:contain;margin:0 auto 18px;border-radius:12px";
+      card.append(image);
+    }
+    const confirm = document.createElement("button"); confirm.className = "primary";
+    const closeCurrent = () => { modal.hidden = true; activeAnnouncement = null; renderNextGlobalAnnouncement(); };
+    confirm.textContent = pendingAnnouncements.length ? `Próximo aviso (${pendingAnnouncements.length})` : "Entendi";
+    confirm.addEventListener("click", closeCurrent);
     card.append(title, body, confirm); modal.append(card); modal.hidden = false; confirm.focus();
+  };
+  window.addEventListener("conecta-global-announcement-sync", event => {
+    scheduledAnnouncements = Array.isArray(event.detail) ? event.detail : [];
+    const visibleKeys = new Set(scheduledAnnouncements.map(item => `${item.id}:${item.updated_at}`));
+    if (activeAnnouncement && !visibleKeys.has(`${activeAnnouncement.id}:${activeAnnouncement.updated_at}`)) {
+      activeAnnouncement = null;
+      if (byId("globalAnnouncementModal")) byId("globalAnnouncementModal").hidden = true;
+    }
+    pendingAnnouncements = pendingAnnouncements.filter(item => visibleKeys.has(`${item.id}:${item.updated_at}`));
+    scheduledAnnouncements.forEach(item => {
+      const key = `${item.id}:${item.updated_at}`;
+      if (!shownAnnouncementKeys.has(key) && !pendingAnnouncements.some(queued => `${queued.id}:${queued.updated_at}` === key)) pendingAnnouncements.push(item);
+    });
+    renderNextGlobalAnnouncement();
   });
-  window.addEventListener("conecta-auth-session-reset", () => { shownAnnouncementKey = ""; if (byId("globalAnnouncementModal")) byId("globalAnnouncementModal").hidden = true; });
+  window.addEventListener("conecta-auth-session-reset", () => {
+    shownAnnouncementKeys = new Set(); pendingAnnouncements = []; activeAnnouncement = null;
+    if (byId("globalAnnouncementModal")) byId("globalAnnouncementModal").hidden = true;
+  });
   const baseRenderAdminForAnnouncement = renderAdmin;
   renderAdmin = async () => {
     await baseRenderAdminForAnnouncement();
     if (!isActiveAdmin() || !byId("viewPanel")?.classList.contains("show") || byId("crumb")?.textContent !== "Administração" || byId("globalAnnouncementAdmin")) return;
+    const fb = window.conectaFirebase; const user = currentUser();
+    try { adminAnnouncements = await fb.listGlobalAnnouncements(user); }
+    catch (error) { console.error("Could not list global announcements", error); adminAnnouncements = []; }
     const panel = byId("viewPanel"); const card = document.createElement("section"); card.id = "globalAnnouncementAdmin"; card.className = "card global-announcement-admin";
-    const head = document.createElement("div"); head.className = "card-head"; const heading = document.createElement("div");
-    heading.innerHTML = '<div class="card-title">Aviso global no login</div><div class="card-sub">Será exibido para todos os colaboradores ao entrarem no Conecta.</div>'; head.append(heading);
-    const form = document.createElement("form"); form.className = "admin-form";
-    const titleField = document.createElement("div"); titleField.className = "field full"; titleField.innerHTML = '<label for="globalAnnouncementTitleInput">Título</label><input id="globalAnnouncementTitleInput" maxlength="120" required placeholder="Ex.: Manutenção do sistema">';
-    const bodyField = document.createElement("div"); bodyField.className = "field full"; bodyField.innerHTML = '<label for="globalAnnouncementBodyInput">Mensagem</label><textarea id="globalAnnouncementBodyInput" maxlength="4000" required placeholder="Escreva o aviso que todos devem ler"></textarea>';
-    if (latestAnnouncement) { titleField.querySelector("input").value = latestAnnouncement.title || ""; bodyField.querySelector("textarea").value = latestAnnouncement.body || ""; }
-    const actions = document.createElement("div"); actions.className = "admin-actions full";
-    const publish = document.createElement("button"); publish.className = "primary"; publish.type = "submit"; publish.textContent = "Publicar aviso global";
-    const deactivate = document.createElement("button"); deactivate.className = "secondary"; deactivate.type = "button"; deactivate.textContent = "Desativar aviso";
-    actions.append(deactivate, publish); form.append(titleField, bodyField, actions); card.append(head, form); panel.querySelector(".card")?.before(card);
-    form.addEventListener("submit", async event => {
-      event.preventDefault(); const fb = window.conectaFirebase; const user = currentUser();
-      try { await fb.saveGlobalAnnouncement(user, { title: byId("globalAnnouncementTitleInput").value.trim(), body: byId("globalAnnouncementBodyInput").value.trim() }); showToast("Aviso global publicado"); }
-      catch (error) { console.error(error); showToast("Não foi possível publicar o aviso global"); }
-    });
-    deactivate.addEventListener("click", async () => {
-      const fb = window.conectaFirebase; const user = currentUser();
-      try { await fb.deactivateGlobalAnnouncement(user); showToast("Aviso global desativado"); }
-      catch (error) { console.error(error); showToast("Não foi possível desativar o aviso"); }
-    });
+    const heading = document.createElement("div"); heading.className = "card-head"; heading.innerHTML = '<div><div class="card-title">Avisos globais</div><div class="card-sub">Crie vários avisos, anexe imagem e programe a data e o horário de exibição.</div></div>';
+    const form = document.createElement("form"); form.className = "admin-form"; form.id = "globalAnnouncementForm";
+    form.innerHTML = '<input id="globalAnnouncementId" type="hidden"><div class="field full"><label for="globalAnnouncementTitleInput">Título</label><input id="globalAnnouncementTitleInput" maxlength="120" required placeholder="Ex.: Recesso de fim de ano"></div><div class="field full"><label for="globalAnnouncementBodyInput">Mensagem</label><textarea id="globalAnnouncementBodyInput" maxlength="4000" required placeholder="Escreva o aviso para a equipe"></textarea></div><div class="field"><label for="globalAnnouncementStartsAt">Exibir a partir de</label><input id="globalAnnouncementStartsAt" type="datetime-local" required></div><div class="field"><label for="globalAnnouncementEndsAt">Ocultar em (opcional)</label><input id="globalAnnouncementEndsAt" type="datetime-local"></div><div class="field full"><label for="globalAnnouncementImage">Imagem (JPG, PNG ou WEBP; até 5 MB)</label><input id="globalAnnouncementImage" type="file" accept="image/jpeg,image/png,image/webp"><small id="globalAnnouncementImageInfo"></small><img id="globalAnnouncementImagePreview" alt="Prévia da imagem do aviso" hidden style="max-width:min(100%,420px);max-height:220px;object-fit:contain;border-radius:10px;margin-top:8px"><label style="display:flex;align-items:center;gap:8px;font-weight:400"><input id="globalAnnouncementRemoveImage" type="checkbox" style="width:auto"> Remover imagem atual</label></div><div class="field full"><label style="display:flex;align-items:center;gap:8px;font-weight:400"><input id="globalAnnouncementActive" type="checkbox" checked style="width:auto"> Ativo (será exibido na data programada)</label></div><div class="admin-actions full"><button id="globalAnnouncementCancel" class="secondary" type="button" hidden>Cancelar edição</button><button id="globalAnnouncementSubmit" class="primary" type="submit">＋ Criar aviso</button></div></form>';
+    const list = document.createElement("div"); list.id = "globalAnnouncementList"; list.style.cssText = "display:grid;gap:10px;padding:0 20px 20px";
+    card.append(heading, form, list); panel.querySelector(".card")?.before(card);
+    const localDateTime = value => { const date = value ? new Date(value) : new Date(Date.now() + 60_000); date.setMinutes(date.getMinutes() - date.getTimezoneOffset()); return date.toISOString().slice(0, 16); };
+    const formatDateTime = value => value ? new Date(value).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—";
+    const imageInput = byId("globalAnnouncementImage");
+    const showList = () => {
+      list.replaceChildren();
+      if (!adminAnnouncements.length) { const empty = document.createElement("div"); empty.className = "empty"; empty.textContent = "Nenhum aviso global cadastrado."; list.append(empty); return; }
+      [...adminAnnouncements].sort((a, b) => new Date(b.starts_at) - new Date(a.starts_at)).forEach(item => {
+        const row = document.createElement("article"); row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:12px;padding:12px;border:1px solid #e8ece7;border-radius:12px";
+        if (item.image_url) { const image = document.createElement("img"); image.src = item.image_url; image.alt = ""; image.style.cssText = "width:72px;height:58px;object-fit:cover;border-radius:8px"; row.append(image); }
+        const info = document.createElement("div"); info.style.cssText = "min-width:0;flex:1";
+        const name = document.createElement("strong"); name.textContent = item.title;
+        const time = document.createElement("small"); time.style.cssText = "display:block;color:#747b90;margin-top:4px";
+        const state = !item.is_active ? "Desativado" : (new Date(item.starts_at) > new Date() ? "Agendado" : (item.ends_at && new Date(item.ends_at) <= new Date() ? "Encerrado" : "Publicado"));
+        time.textContent = `${state} · ${formatDateTime(item.starts_at)}${item.ends_at ? ` até ${formatDateTime(item.ends_at)}` : ""}`;
+        info.append(name, time); row.append(info);
+        const edit = document.createElement("button"); edit.className = "secondary"; edit.type = "button"; edit.textContent = "Editar";
+        edit.onclick = () => {
+          byId("globalAnnouncementId").value = item.id; byId("globalAnnouncementTitleInput").value = item.title || ""; byId("globalAnnouncementBodyInput").value = item.body || "";
+          byId("globalAnnouncementStartsAt").value = localDateTime(item.starts_at); byId("globalAnnouncementEndsAt").value = item.ends_at ? localDateTime(item.ends_at) : "";
+          byId("globalAnnouncementActive").checked = item.is_active; byId("globalAnnouncementRemoveImage").checked = false; imageInput.value = "";
+          byId("globalAnnouncementImageInfo").textContent = item.image_path ? `Imagem atual anexada${item.image_url ? "; selecione outra para substituir" : ""}.` : "";
+          const preview = byId("globalAnnouncementImagePreview"); preview.src = item.image_url || ""; preview.hidden = !item.image_url;
+          byId("globalAnnouncementSubmit").textContent = "Salvar alterações"; byId("globalAnnouncementCancel").hidden = false; byId("globalAnnouncementForm").scrollIntoView({ behavior: "smooth", block: "center" });
+        };
+        const toggle = document.createElement("button"); toggle.className = "secondary"; toggle.type = "button"; toggle.textContent = item.is_active ? "Desativar" : "Ativar";
+        toggle.onclick = async () => { try { await fb.setGlobalAnnouncementActive(user, item.id, !item.is_active); adminAnnouncements = await fb.listGlobalAnnouncements(user); showList(); showToast(item.is_active ? "Aviso desativado" : "Aviso ativado"); } catch (error) { showError(error); } };
+        const remove = document.createElement("button"); remove.className = "secondary"; remove.type = "button"; remove.textContent = "Excluir";
+        remove.onclick = async () => { if (!confirm("Excluir este aviso global permanentemente?")) return; try { await fb.deleteGlobalAnnouncement(user, item.id); adminAnnouncements = await fb.listGlobalAnnouncements(user); showList(); showToast("Aviso excluído"); } catch (error) { showError(error); } };
+        row.append(edit, toggle, remove); list.append(row);
+      });
+    };
+    showList();
+    imageInput.onchange = () => { const file = imageInput.files?.[0]; byId("globalAnnouncementImageInfo").textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : ""; const preview = byId("globalAnnouncementImagePreview"); if (file) { preview.src = URL.createObjectURL(file); preview.hidden = false; } };
+    byId("globalAnnouncementRemoveImage").onchange = event => { if (event.target.checked && !imageInput.files?.length) byId("globalAnnouncementImagePreview").hidden = true; };
+    byId("globalAnnouncementCancel").onclick = () => { form.reset(); byId("globalAnnouncementId").value = ""; byId("globalAnnouncementActive").checked = true; byId("globalAnnouncementStartsAt").value = localDateTime(); byId("globalAnnouncementImageInfo").textContent = ""; byId("globalAnnouncementImagePreview").removeAttribute("src"); byId("globalAnnouncementImagePreview").hidden = true; byId("globalAnnouncementSubmit").textContent = "＋ Criar aviso"; byId("globalAnnouncementCancel").hidden = true; };
+    byId("globalAnnouncementStartsAt").value = localDateTime();
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const starts = byId("globalAnnouncementStartsAt").value; const ends = byId("globalAnnouncementEndsAt").value;
+      if (ends && new Date(ends) <= new Date(starts)) { showToast("A data para ocultar precisa ser posterior à data de exibição."); return; }
+      const file = imageInput.files?.[0];
+      if (file && (!(["image/jpeg", "image/png", "image/webp"].includes(file.type)) || file.size > 5 * 1024 * 1024)) { showToast("Escolha uma imagem JPG, PNG ou WEBP de até 5 MB."); return; }
+      try {
+        await fb.saveGlobalAnnouncement(user, { id: byId("globalAnnouncementId").value || null, title: byId("globalAnnouncementTitleInput").value.trim(), body: byId("globalAnnouncementBodyInput").value.trim(), starts_at: new Date(starts).toISOString(), ends_at: ends ? new Date(ends).toISOString() : null, is_active: byId("globalAnnouncementActive").checked, imageFile: file || null, removeImage: byId("globalAnnouncementRemoveImage").checked });
+        adminAnnouncements = await fb.listGlobalAnnouncements(user); showList(); byId("globalAnnouncementCancel").click(); showToast("Aviso global salvo");
+      } catch (error) { console.error(error); showToast(error.message || "Não foi possível salvar o aviso global"); }
+    };
   };
 
   // Replace the legacy channel-only view with the RLS-filtered channel + 1:1 list.
