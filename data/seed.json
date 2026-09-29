@@ -4,12 +4,10 @@
     "slug": "triade-contabilidade"
   },
   "sectors": ["Geral", "Fiscal", "Contábil", "Departamento Pessoal", "Atendimento"],
-  "users": [
-    {"id": "demo_admin", "name": "Administrador", "role": "Administradora", "sector": "Administrativo"},
-    {"id": "demo_member", "name": "Colaborador de demonstração", "role": "Colaborador", "sector": "Contábil"}
-  ],
+  "users": [],
   "permissions": {
     "Administradora": ["workspace:read", "workspace:write", "notice:create", "conversation:create", "reminder:write"],
     "Colaborador": ["workspace:read", "conversation:create", "reminder:write"]
   }
 }
+
