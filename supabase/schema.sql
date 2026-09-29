@@ -79,7 +79,7 @@ as $$
 declare total_profiles integer;
 begin
   select count(*) into total_profiles from public.profiles;
-  if total_profiles = 0 then
+  if total_profiles = 0 or (total_profiles = 1 and not exists (select 1 from public.profiles where role = 'admin')) then
     update public.profiles set role = 'admin', sector = 'Administração' where id = auth.uid();
   end if;
   return json_build_object('role', (select role from public.profiles where id = auth.uid()));
