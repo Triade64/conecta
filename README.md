@@ -7,7 +7,6 @@ Base inicial da aplicação interna do escritório, com foco em comunicação r�
 - `index.html`: aplicação navegável e responsiva.
 - `data/seed.json`: estrutura de setores e permissões, sem usuários fictícios.
 - `docs/architecture.md`: arquitetura funcional e plano de evolução.
-- `public/conecta-prototipo.html`: cópia de referência da versão anterior.
 
 O protótipo usa `localStorage` para manter os dados no navegador. Isso permite testar a experiência sem servidor. A próxima camada substitui esse armazenamento por uma API e banco compartilhado.
 
