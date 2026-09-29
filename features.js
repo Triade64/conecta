@@ -797,4 +797,42 @@
       byId("modalBack").classList.remove("show");
     } catch (error) { showError(error); }
   }, true);
+
+  // Small-screen drawer navigation: the existing sidebar remains the source of truth,
+  // while the hamburger opens it as an accessible off-canvas menu.
+  const mobileApp = document.querySelector(".app");
+  const mobileMenuButton = document.querySelector(".mobile-menu");
+  const mobileSidebar = document.querySelector(".sidebar");
+  if (mobileApp && mobileMenuButton && mobileSidebar && !document.querySelector(".mobile-nav-backdrop")) {
+    const backdrop = document.createElement("button");
+    backdrop.type = "button";
+    backdrop.className = "mobile-nav-backdrop";
+    backdrop.setAttribute("aria-label", "Fechar menu");
+    mobileApp.insertBefore(backdrop, mobileSidebar);
+    mobileSidebar.id ||= "primaryNavigation";
+    mobileMenuButton.setAttribute("aria-controls", mobileSidebar.id);
+    mobileMenuButton.setAttribute("aria-expanded", "false");
+
+    const setMenuOpen = open => {
+      mobileApp.classList.toggle("mobile-nav-open", open);
+      document.body.classList.toggle("mobile-nav-open", open);
+      mobileMenuButton.setAttribute("aria-expanded", String(open));
+      mobileMenuButton.setAttribute("aria-label", open ? "Fechar menu" : "Abrir menu");
+      mobileMenuButton.textContent = open ? "×" : "☰";
+      if (open) mobileSidebar.querySelector("[data-view]:not([hidden])")?.focus({ preventScroll: true });
+      else mobileMenuButton.focus({ preventScroll: true });
+    };
+
+    mobileMenuButton.addEventListener("click", () => setMenuOpen(!mobileApp.classList.contains("mobile-nav-open")));
+    backdrop.addEventListener("click", () => setMenuOpen(false));
+    mobileSidebar.addEventListener("click", event => {
+      if (event.target.closest("[data-view]:not([hidden])")) setMenuOpen(false);
+    });
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape" && mobileApp.classList.contains("mobile-nav-open")) setMenuOpen(false);
+    });
+    window.matchMedia("(min-width: 761px)").addEventListener("change", event => {
+      if (event.matches) setMenuOpen(false);
+    });
+  }
 })();
