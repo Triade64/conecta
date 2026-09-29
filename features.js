@@ -735,7 +735,7 @@
       ["Setor", profile.sector || "—"],
       ["Acesso", roleNames[profile.role] || "Colaborador"]
     ];
-    panel.innerHTML = '<div class="view-toolbar"><div><h2>Meu perfil</h2><p>Confira os dados da sua conta e atualize sua senha de acesso.</p></div></div><div class="profile-grid"><section class="card"><div class="card-head"><div><div class="card-title">Dados da conta</div><div class="card-sub">Informações vinculadas ao seu usuário.</div></div></div><dl class="profile-details">' + values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") + '</dl></section><section class="card"><div class="card-head"><div><div class="card-title">Trocar senha</div><div class="card-sub">Use a senha atual para definir uma nova.</div></div></div><form class="password-form" id="profilePasswordForm"><div class="field"><label for="profileCurrentPassword">Senha atual</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="profileNewPassword">Nova senha</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small>Use pelo menos 8 caracteres.</small></div><div class="field"><label for="profileConfirmPassword">Confirme a nova senha</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div><div class="profile-feedback" id="passwordChangeFeedback" role="status" aria-live="polite"></div><div class="profile-form-actions"><button class="primary" type="submit">Salvar nova senha</button></div></form></section></div>';
+    panel.innerHTML = '<div class="view-toolbar"><div><h2>Meu perfil</h2><p>Confira os dados da sua conta e atualize sua senha de acesso.</p></div></div><div class="profile-grid"><section class="card"><div class="card-head"><div><div class="card-title">Dados da conta</div><div class="card-sub">Informações vinculadas ao seu usuário.</div></div></div><dl class="profile-details">' + values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") + '</dl></section><section class="card"><div class="card-head"><div><div class="card-title">Trocar senha</div><div class="card-sub">Use a senha atual para definir uma nova.</div></div></div><form class="password-form" id="profilePasswordForm"><div class="field"><label for="profileCurrentPassword">Senha atual</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="profileNewPassword">Nova senha</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small>Use pelo menos 8 caracteres.</small></div><div class="field"><label for="profileConfirmPassword">Confirme a nova senha</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div><div class="field profile-reauth-field" id="profileReauthField" hidden><label for="profileReauthCode">Código enviado ao seu e-mail</label><input id="profileReauthCode" name="nonce" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Digite o código de confirmação"></div><div class="profile-feedback" id="passwordChangeFeedback" role="status" aria-live="polite"></div><div class="profile-form-actions"><button class="primary" type="submit">Salvar nova senha</button></div></form></section></div>';
   };
 
   const baseRenderViewForProfile = renderView;
@@ -763,6 +763,7 @@
       const currentPassword = byId("profileCurrentPassword").value;
       const newPassword = byId("profileNewPassword").value;
       const confirmation = byId("profileConfirmPassword").value;
+      const nonce = byId("profileReauthCode").value.trim();
       feedback.className = "profile-feedback";
       feedback.textContent = "";
       if (newPassword !== confirmation) {
@@ -779,20 +780,30 @@
       submit.disabled = true;
       submit.textContent = "Atualizando…";
       try {
-        await window.conectaFirebase.changePassword({ currentPassword, newPassword });
+        await window.conectaFirebase.changePassword({ currentPassword, newPassword, nonce });
         form.reset();
+        byId("profileReauthField").hidden = true;
         feedback.classList.add("success");
         feedback.textContent = "Senha atualizada. Use a nova senha no próximo acesso.";
         showToast("Senha atualizada com sucesso.");
       } catch (error) {
         console.error("Password change failed", error);
         const message = String(error?.message || "").toLowerCase();
-        feedback.classList.add("error");
-        feedback.textContent = message.includes("incorrect") || message.includes("invalid login") || message.includes("senha atual")
+        if (error?.code === "reauthentication_required") {
+          byId("profileReauthField").hidden = false;
+          feedback.classList.add("success");
+          feedback.textContent = "O Supabase exige uma confirmação extra. Digite o código que enviamos por e-mail e salve novamente.";
+          byId("profileReauthCode").focus();
+        } else {
+          feedback.classList.add("error");
+          feedback.textContent = message.includes("incorrect") || message.includes("invalid login") || message.includes("senha atual")
           ? "A senha atual está incorreta. Confira e tente novamente."
           : message.includes("weak") || message.includes("password should")
             ? "A nova senha não atende aos requisitos de segurança. Escolha outra com pelo menos 8 caracteres."
+            : (message.includes("nonce") || message.includes("reauthentication"))
+              ? "O código de confirmação está inválido ou expirou. Solicite outro e tente novamente."
             : "Não foi possível atualizar a senha. Confira os dados e tente novamente.";
+        }
       } finally {
         submit.disabled = false;
         submit.textContent = "Salvar nova senha";
