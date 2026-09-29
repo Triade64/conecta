@@ -1,0 +1,319 @@
+(() => {
+  const currentUserId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.uid || null;
+  const currentUser = () => window.conectaFirebase?.auth?.currentUser;
+  const byId = id => document.getElementById(id);
+  const addButton = (parent, label, className, onClick) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = label;
+    button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); onClick(); });
+    parent.append(button);
+    return button;
+  };
+  const showError = error => {
+    console.error("Conecta action failed", error);
+    showToast(error?.message || "Não foi possível concluir a ação.");
+  };
+  const refreshMessages = async conversation => {
+    const fb = window.conectaFirebase;
+    await fb.watchMessages(conversation.firestoreId, messages => {
+      conversation.messages = messages.map(message => ({
+        id: message.id,
+        authorId: message.authorId || message.author_id,
+        authorName: message.authorName || message.author_name || "",
+        text: message.text,
+        time: syncDate(message.createdAt || message.created_at) || "Agora",
+        mine: (message.authorId || message.author_id) === currentUserId(),
+        replyTo: message.replyTo || message.reply_to || null,
+        editedAt: message.editedAt || message.edited_at || null,
+        deletedAt: message.deletedAt || message.deleted_at || null
+      }));
+      renderConversations(undefined, false);
+    });
+  };
+
+  const baseOpenModal = openModal;
+  openModal = window.openModal = type => {
+    baseOpenModal(type);
+    const form = byId("form");
+    delete form.dataset.featureAction;
+    delete form.dataset.recordId;
+  };
+
+  const baseRenderNotices = renderNotices;
+  renderNotices = window.renderNotices = () => {
+    baseRenderNotices();
+    const uid = currentUserId();
+    const filter = byId("noticeFilter")?.value || "Todos";
+    const visible = filter === "Todos" ? notices : notices.filter(item => item.sector === filter);
+    document.querySelectorAll(".notice-card").forEach((card, index) => {
+      const item = visible[index];
+      if (!item?.id || item.author_id !== uid || card.querySelector(".record-actions")) return;
+      const actions = document.createElement("div");
+      actions.className = "record-actions";
+      addButton(actions, "Editar", "record-action", () => {
+        openModal("notice");
+        byId("modalTitle").textContent = "Editar aviso";
+        byId("modalDesc").textContent = "Altere o conteúdo do aviso criado por você.";
+        byId("title").value = item.title || "";
+        const sector = String(item.sector || "Geral").toLowerCase();
+        byId("sector").value = sector.includes("fiscal") ? "Fiscal" : sector.includes("contáb") || sector.includes("contab") ? "Contábil" : sector.includes("pessoal") ? "Departamento Pessoal" : "Geral";
+        byId("message").value = item.body || item.text || "";
+        byId("form").dataset.featureAction = "edit-notice";
+        byId("form").dataset.recordId = item.id;
+      });
+      addButton(actions, "Excluir", "record-action danger", async () => {
+        if (!confirm("Excluir este aviso para todos que podem visualizá-lo?")) return;
+        try {
+          await window.conectaFirebase.deleteNotice(item.id);
+          notices = notices.filter(row => row.id !== item.id);
+          renderNotices();
+          showToast("Aviso excluído.");
+        } catch (error) { showError(error); }
+      });
+      card.append(actions);
+    });
+  };
+
+  const baseRenderReminders = renderReminders;
+  renderReminders = window.renderReminders = () => {
+    baseRenderReminders();
+    const uid = currentUserId();
+    document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach((row, index) => {
+      const box = row.closest("#fullReminders") ? byId("fullReminders") : byId("reminders");
+      if (box?.id === "fullReminders") row.querySelector(".record-actions")?.remove();
+      const listIndex = [...box.querySelectorAll(".reminder")].indexOf(row);
+      const item = reminders[listIndex];
+      if (!item?.id || item.owner_id !== uid || row.querySelector(".record-actions")) return;
+      const actions = document.createElement("div");
+      actions.className = "record-actions";
+      addButton(actions, "Editar", "record-action", () => {
+        openModal("reminder");
+        byId("modalTitle").textContent = "Editar lembrete";
+        byId("modalDesc").textContent = "Altere o lembrete criado por você.";
+        byId("title").value = item.title || "";
+        if (item.due_at) {
+          const due = new Date(item.due_at);
+          byId("when").value = new Date(due.getTime() - due.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+        }
+        byId("form").dataset.featureAction = "edit-reminder";
+        byId("form").dataset.recordId = item.id;
+      });
+      addButton(actions, "Excluir", "record-action danger", async () => {
+        if (!confirm("Excluir este lembrete?")) return;
+        try {
+          await window.conectaFirebase.deleteReminder(item.id);
+          reminders = reminders.filter(entry => entry.id !== item.id);
+          renderReminders();
+          showToast("Lembrete excluído.");
+        } catch (error) { showError(error); }
+      });
+      row.append(actions);
+    });
+  };
+
+  const baseRenderView = renderView;
+  renderView = window.renderView = view => {
+    baseRenderView(view);
+    if (view === "Lembretes") renderReminders();
+  };
+
+  const baseRenderConversations = renderConversations;
+  renderConversations = window.renderConversations = (filter, watch = true) => {
+    baseRenderConversations(filter, watch);
+    const conversation = contacts[selectedContact];
+    const box = byId("chatMessages");
+    if (!conversation || !box) return;
+    const raw = window.conectaRawMessagesConversationId === conversation.firestoreId ? (window.conectaRawMessages || []) : [];
+    conversation.messages = conversation.messages.map((message, index) => {
+      const source = raw[index] || {};
+      return {
+        ...message,
+        id: source.id || message.id,
+        authorId: source.authorId || source.author_id || message.authorId,
+        authorName: source.authorName || source.author_name || message.authorName,
+        replyTo: source.replyTo || source.reply_to || message.replyTo,
+        editedAt: source.editedAt || source.edited_at || message.editedAt,
+        deletedAt: source.deletedAt || source.deleted_at || message.deletedAt,
+        mine: (source.authorId || source.author_id || message.authorId) === currentUserId()
+      };
+    });
+    const rows = [...box.querySelectorAll(":scope > .message-row")];
+    rows.forEach((row, index) => {
+      const message = conversation.messages[index];
+      const bubble = row.querySelector(".bubble");
+      const stack = row.querySelector(".message-stack");
+      if (!message || !bubble || !stack) return;
+      bubble.dataset.messageId = message.id || "";
+      if (message.deletedAt) {
+        bubble.replaceChildren(document.createTextNode("Mensagem apagada"));
+        const time = document.createElement("small");
+        time.textContent = message.time || "";
+        bubble.append(time);
+      } else if (message.editedAt) {
+        const time = bubble.querySelector("small");
+        if (time && !time.textContent.includes("editada")) time.textContent += " · editada";
+      }
+
+      if (message.replyTo && !stack.querySelector(".reply-quote")) {
+        const parent = raw.find(row => row.id === message.replyTo);
+        const quote = document.createElement("div");
+        quote.className = "reply-quote";
+        quote.textContent = parent
+          ? `${parent.authorName || parent.author_name || "Colaborador"}: ${parent.deleted_at ? "Mensagem apagada" : parent.text}`
+          : "Mensagem respondida";
+        stack.insertBefore(quote, bubble);
+      }
+
+      if (row.querySelector(".message-actions") || !message.id) return;
+      const actions = document.createElement("div");
+      actions.className = "message-actions";
+      const menu = document.createElement("div");
+      menu.className = "message-action-menu";
+      menu.hidden = true;
+      const toggle = document.createElement("button");
+      toggle.type = "button";
+      toggle.className = "message-action-trigger";
+      toggle.setAttribute("aria-label", "Ações da mensagem");
+      toggle.textContent = "⋯";
+      toggle.addEventListener("click", event => {
+        event.stopPropagation();
+        document.querySelectorAll(".message-action-menu").forEach(item => { if (item !== menu) item.hidden = true; });
+        menu.hidden = !menu.hidden;
+      });
+      const menuAction = (label, action, danger = false) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = danger ? "danger" : "";
+        button.textContent = label;
+        button.addEventListener("click", async event => {
+          event.stopPropagation();
+          menu.hidden = true;
+          try { await action(); } catch (error) { showError(error); }
+        });
+        menu.append(button);
+      };
+      if (!message.deletedAt) {
+        menuAction("Responder", () => {
+          conversation.replyTarget = {
+            id: message.id,
+            text: raw[index]?.text ?? message.text,
+            authorName: message.authorName || (message.mine ? "Você" : "Colaborador")
+          };
+          renderConversations(undefined, false);
+        });
+      }
+      if (message.mine && !message.deletedAt) {
+        menuAction("Editar mensagem", () => {
+          openModal("message");
+          byId("modalTitle").textContent = "Editar mensagem";
+          byId("modalDesc").textContent = "A mensagem editada será atualizada para todos.";
+          byId("destination")?.closest(".field")?.remove();
+          byId("message").value = raw[index]?.text ?? message.text ?? "";
+          byId("form").dataset.featureAction = "edit-message";
+          byId("form").dataset.recordId = message.id;
+          menu.hidden = true;
+        });
+        menuAction("Apagar para todos", async () => {
+          if (!confirm("Apagar esta mensagem para todos os participantes?")) return;
+          await window.conectaFirebase.deleteMessageForEveryone(message.id);
+          await refreshMessages(conversation);
+        }, true);
+      }
+      menuAction("Apagar para mim", async () => {
+        await window.conectaFirebase.deleteMessageForMe(message.id, currentUser());
+        await refreshMessages(conversation);
+      }, true);
+      actions.append(toggle, menu);
+      row.append(actions);
+    });
+
+    const chat = box.closest(".conversation-chat");
+    const composer = chat?.querySelector("#composer");
+    chat?.querySelector(".reply-compose-preview")?.remove();
+    if (conversation.replyTarget && composer) {
+      const preview = document.createElement("div");
+      preview.className = "reply-compose-preview";
+      const text = document.createElement("span");
+      text.textContent = `Respondendo a ${conversation.replyTarget.authorName}: ${conversation.replyTarget.text}`;
+      const close = document.createElement("button");
+      close.type = "button";
+      close.textContent = "×";
+      close.setAttribute("aria-label", "Cancelar resposta");
+      close.addEventListener("click", () => {
+        conversation.replyTarget = null;
+        renderConversations(undefined, false);
+      });
+      preview.append(text, close);
+      chat.insertBefore(preview, composer);
+    }
+    box.scrollTop = box.scrollHeight;
+  };
+
+  window.addEventListener("conecta-firebase-ready", () => {
+    const fb = window.conectaFirebase;
+    if (!fb?.watchMessages || fb.__replyMetadataInstalled) return;
+    fb.__replyMetadataInstalled = true;
+    const watch = fb.watchMessages;
+    fb.watchMessages = (conversationId, callback) => watch(conversationId, messages => {
+      window.conectaRawMessagesConversationId = conversationId;
+      callback(messages);
+    });
+  });
+
+  document.addEventListener("submit", async event => {
+    const form = event.target;
+    if (form.id === "composer") {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      const conversation = contacts[selectedContact];
+      const user = currentUser();
+      const text = byId("chatInput").value.trim();
+      if (!conversation?.firestoreId || !user || !text) return;
+      try {
+        await window.conectaFirebase.sendMessage(user, conversation.firestoreId, text, conversation.replyTarget?.id || null);
+        conversation.replyTarget = null;
+        byId("chatInput").value = "";
+        await refreshMessages(conversation);
+        showToast("Mensagem enviada.");
+      } catch (error) { showError(error); }
+      return;
+    }
+    if (form.id !== "form") return;
+    const action = form.dataset.featureAction;
+    const type = form.dataset.type;
+    if (!action && type !== "reminder") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    const fb = window.conectaFirebase;
+    const id = form.dataset.recordId;
+    try {
+      if (action === "edit-notice") {
+        const data = { title: byId("title").value.trim(), sector: byId("sector").value, text: byId("message").value.trim() };
+        await fb.updateNotice(id, data);
+        notices = notices.map(item => item.id === id ? { ...item, title: data.title, body: data.text, text: data.text, sector: data.sector } : item);
+        renderNotices();
+        showToast("Aviso atualizado.");
+      } else if (action === "edit-reminder") {
+        const data = { title: byId("title").value.trim(), due_at: new Date(byId("when").value).toISOString() };
+        await fb.updateReminder(id, data);
+        reminders = reminders.map(item => item.id === id ? { ...item, ...data, time: syncDate(data.due_at) } : item);
+        renderReminders();
+        showToast("Lembrete atualizado.");
+      } else if (action === "edit-message") {
+        await fb.editMessage(id, byId("message").value.trim());
+        const conversation = contacts[selectedContact];
+        if (conversation) await refreshMessages(conversation);
+        showToast("Mensagem editada para todos.");
+      } else if (type === "reminder") {
+        const dueAt = new Date(byId("when").value).toISOString();
+        await fb.addReminder(currentUser(), { title: byId("title").value.trim(), due_at: dueAt });
+        showToast("Lembrete salvo.");
+      } else return;
+      delete form.dataset.featureAction;
+      delete form.dataset.recordId;
+      byId("modalBack").classList.remove("show");
+    } catch (error) { showError(error); }
+  }, true);
+})();
