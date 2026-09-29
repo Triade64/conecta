@@ -22,9 +22,12 @@ async function ensureUserProfile(user) {
 }
 
 async function loadData(user) {
+  const profile = await ensureUserProfile(user);
+  let remindersQuery = supabase.from("reminders").select("*").order("created_at", { ascending: false });
+  if (profile.role !== "admin" || profile.active !== true) remindersQuery = remindersQuery.eq("owner_id", user.id);
   const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }] = await Promise.all([
     supabase.from("notices").select("*").order("created_at", { ascending: false }),
-    supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false }),
+    remindersQuery,
     supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
     supabase.from("profiles").select("*").order("name"),
     supabase.rpc("list_team_directory"),
@@ -42,7 +45,7 @@ async function loadData(user) {
     return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", unreadCount: unreadCounts.get(x.id) || 0, kind: x.kind, lastMessage: x.last_message };
   }));
   dispatch("conecta-unread-sync", Object.fromEntries(unreadCounts));
-  if ((await ensureUserProfile(user)).role === "admin") dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
+  if (profile.role === "admin" && profile.active === true) dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
 }
 
 function startDataSync(user) {
