@@ -5,6 +5,7 @@ const { getFirestore, FieldValue } = require("firebase-admin/firestore");
 
 initializeApp();
 const db = getFirestore();
+const INITIAL_ADMIN_UID = "BXSiWSO0qvXErauBVwitC8Pe0mL2";
 
 exports.createUser = onCall(async request => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login obrigatório.");
@@ -21,6 +22,11 @@ exports.createUser = onCall(async request => {
 
 exports.bootstrapAdmin = onCall(async request => {
   if (!request.auth) throw new HttpsError("unauthenticated", "Login obrigatório.");
+  if (request.auth.uid === INITIAL_ADMIN_UID) {
+    const user = await getAuth().getUser(request.auth.uid);
+    await db.doc(`users/${request.auth.uid}`).set({ name: user.displayName || user.email.split("@")[0], email: user.email, role: "admin", sector: "Administração", active: true, createdAt: FieldValue.serverTimestamp() }, { merge: true });
+    return { role: "admin" };
+  }
   const existing = await db.collection("users").limit(1).get();
   if (!existing.empty) return { role: "colaborador" };
   const user = await getAuth().getUser(request.auth.uid);
