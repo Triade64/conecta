@@ -1,37 +1,36 @@
 # Conecta — comunicação interna da Tríade
 
-Base inicial da aplicação interna do escritório, com foco em comunicação rápida, avisos, lembretes e canais por setor.
+Aplicação web para comunicação por setor e individual, avisos, lembretes e administração da equipe.
 
-## Estado atual
+## Tecnologias
 
-- `index.html`: aplicação navegável e responsiva.
-- `data/seed.json`: estrutura de setores e permissões, sem usuários fictícios.
-- `docs/architecture.md`: arquitetura funcional e plano de evolução.
-- Avisos, lembretes, canais e mensagens sincronizados em tempo real pelo Firestore para usuários autenticados.
+- Frontend estático em `index.html` e `features.js`.
+- Supabase Auth, Postgres com RLS e Realtime em `supabase-app.js`.
+- Deploy pela Vercel conectada ao repositório `Triade64/conecta`.
 
-Conversas por setor criam seus canais no Firestore quando são acessadas pela primeira vez. Mensagens novas são gravadas na subcoleção do canal e carregadas em tempo real.
+## Banco de dados
 
-## Vercel + Supabase
+Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta ordem:
 
-A publicação deve ser feita conectando o repositório `Triade64/conecta` à Vercel. O arquivo `vercel.json` já configura o roteamento da aplicação.
+1. `supabase/schema.sql`
+2. `supabase/sector-permissions.sql`
+3. `supabase/direct-messages.sql`
+4. `supabase/message-management.sql`
+5. `supabase/message-author-identity.sql`
+6. `supabase/conversation-unreads.sql`
+7. `supabase/admin-content-moderation.sql`
+8. `supabase/chat_realtime_security.sql`
+9. `supabase/global-announcements-presence.sql`
 
-No Supabase, execute `supabase/schema.sql` no SQL Editor. Depois, configure na Vercel as variáveis:
+O último script cria a configuração única do aviso global e as políticas privadas de presença. Lembretes permanecem privados para cada usuário, inclusive para administradores.
+
+## Configuração da Vercel
+
+Configure as variáveis de ambiente:
 
 ```text
 VITE_SUPABASE_URL
 VITE_SUPABASE_PUBLISHABLE_KEY
 ```
 
-O frontend usa Supabase Auth, Postgres com RLS e Realtime para perfis, avisos, lembretes, canais e mensagens. A chave `publishable`/`anon` pode ficar no frontend; a `service_role` nunca deve ser publicada.
-
-## Como abrir
-
-Abra `index.html` no navegador. Não há dependências obrigatórias para executar a versão atual.
-
-## Próxima implementação
-
-1. Autenticação e perfis de funcionário.
-2. API para usuários, setores, conversas, mensagens, avisos e lembretes.
-3. Banco compartilhado e controle de permissões.
-4. Atualização em tempo real e notificações.
-5. Publicação privada para a equipe.
+A chave `publishable` pode ser usada no frontend em conjunto com RLS. Nunca publique uma chave `service_role`.
