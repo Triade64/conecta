@@ -58,11 +58,13 @@
       window.dispatchEvent(new CustomEvent("conecta-conversations-sync", { detail: items }));
     });
     stopUsersSync();
-    const stopUsers = onSnapshot(query(collection(db, "users")), snapshot => {
-      const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
-      window.dispatchEvent(new CustomEvent("conecta-users-sync", { detail: items }));
-    });
-    stopUsersSync = stopUsers;
+    if (window.conectaCurrentProfile?.role === "admin") {
+      const stopUsers = onSnapshot(query(collection(db, "users")), snapshot => {
+        const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+        window.dispatchEvent(new CustomEvent("conecta-users-sync", { detail: items }));
+      });
+      stopUsersSync = stopUsers;
+    }
     stopDataSync = () => { stopNotices(); stopReminders(); stopConversations(); stopMessageSync(); stopUsersSync(); };
   };
   const ensureUserProfile = async user => {
