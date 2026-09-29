@@ -20,15 +20,23 @@ async function ensureUserProfile(user) {
 }
 
 async function loadData(user) {
-  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }] = await Promise.all([
+  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }] = await Promise.all([
     supabase.from("notices").select("*").order("created_at", { ascending: false }),
     supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false }),
     supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
-    supabase.from("profiles").select("*").order("name")
+    supabase.from("profiles").select("*").order("name"),
+    supabase.rpc("list_team_directory")
   ]);
+  const colleagues = directory || [];
+  const people = new Map(colleagues.map(person => [person.id, person]));
   dispatch("conecta-notices-sync", (notices || []).map(x => ({ ...x, text: x.body, time: syncDate(x.created_at) })));
   dispatch("conecta-reminders-sync", (reminders || []).map(x => ({ ...x, title: x.title, time: syncDate(x.due_at || x.created_at), done: x.done })));
-  dispatch("conecta-conversations-sync", (conversations || []).map(x => ({ ...x, firestoreId: x.id, name: x.name, kind: x.kind, lastMessage: x.last_message })));
+  dispatch("conecta-directory-sync", colleagues);
+  dispatch("conecta-conversations-sync", (conversations || []).map(x => {
+    const otherId = x.kind === "direct" ? (x.created_by === user.id ? x.direct_recipient_id : x.created_by) : null;
+    const other = otherId ? people.get(otherId) : null;
+    return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", kind: x.kind, lastMessage: x.last_message };
+  })));
   if ((await ensureUserProfile(user)).role === "admin") dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
 }
 
@@ -103,6 +111,12 @@ window.conectaFirebase = {
   },
   deleteMessageForMe: async (id, user) => { const { error } = await supabase.from("message_hidden_for").insert({ message_id: id, user_id: user.id }); if (error && error.code !== "23505") throw error; },
   ensureChannel: async (user, name) => { let { data: existing } = await supabase.from("conversations").select("id").eq("name", name).maybeSingle(); if (existing) return existing.id; const { data } = await supabase.from("conversations").insert({ kind: "channel", name, sector: name, created_by: user.id }).select("id").single(); return data.id; },
+  startDirectConversation: async (user, otherUserId) => {
+    const { data, error } = await supabase.rpc("start_direct_conversation", { p_other_user_id: otherUserId });
+    if (error) throw error;
+    await loadData(user);
+    return data;
+  },
   watchMessages,
   sendMessage: async (user, conversationId, text, replyTo = null) => {
     const { error } = await supabase.from("messages").insert({ conversation_id: conversationId, text, author_id: user.id, reply_to: replyTo });
