@@ -114,13 +114,31 @@
   };
 
   const baseRenderReminders = renderReminders;
+  const adminReminderStyle = document.createElement("style");
+  adminReminderStyle.textContent = ".rem-owner{display:block;margin-top:4px;color:#7d867d;font-size:10px}";
+  document.head.append(adminReminderStyle);
   renderReminders = window.renderReminders = () => {
     baseRenderReminders();
+    const admin = isActiveAdmin();
+    const uid = currentUserId();
     // Completion must be persisted in Supabase; the legacy renderer only changed local state.
     document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach(row => {
       const box = row.closest("#fullReminders") ? byId("fullReminders") : byId("reminders");
       const listIndex = [...box.querySelectorAll(".reminder")].indexOf(row);
       const item = reminders[listIndex];
+      if (admin && item?.owner_id) {
+        const details = row.querySelector(".rem-time")?.parentElement;
+        if (details) {
+          let owner = details.querySelector(".rem-owner");
+          if (!owner) {
+            owner = document.createElement("small");
+            owner.className = "rem-owner";
+            details.append(owner);
+          }
+          const person = (window.conectaUsers || window.conectaDirectory || []).find(user => user.id === item.owner_id);
+          owner.textContent = `Criado por ${item.owner_id === uid ? "você" : person?.name || "outro colaborador"}`;
+        }
+      }
       const check = row.querySelector(".check");
       if (!check) return;
       check.onclick = async () => {
@@ -143,8 +161,6 @@
         }
       };
     });
-    const uid = currentUserId();
-    const admin = isActiveAdmin();
     document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach((row, index) => {
       const box = row.closest("#fullReminders") ? byId("fullReminders") : byId("reminders");
       if (box?.id === "fullReminders") row.querySelector(".record-actions")?.remove();
@@ -181,8 +197,29 @@
   const baseRenderView = renderView;
   renderView = window.renderView = view => {
     baseRenderView(view);
-    if (view === "Lembretes") renderReminders();
+    if (view === "Lembretes") {
+      renderReminders();
+      if (isActiveAdmin()) {
+        const title = byId("viewPanel")?.querySelector(".view-toolbar h2");
+        const subtitle = byId("viewPanel")?.querySelector(".view-toolbar p");
+        if (title) title.textContent = "Lembretes de todos os usuários";
+        if (subtitle) subtitle.textContent = "Visualize e organize os lembretes da equipe.";
+      }
+    }
   };
+
+  const updateAdminReminderLabels = () => {
+    if (!isActiveAdmin()) return;
+    const card = byId("reminders")?.closest(".card");
+    const title = card?.querySelector(".card-title");
+    const subtitle = card?.querySelector(".card-sub");
+    if (title) title.textContent = "Lembretes da equipe";
+    if (subtitle) subtitle.textContent = "Acompanhe os lembretes dos colaboradores.";
+    renderReminders();
+  };
+  document.addEventListener("conecta-profile-ready", updateAdminReminderLabels);
+  window.addEventListener("conecta-directory-sync", updateAdminReminderLabels);
+  window.addEventListener("conecta-users-sync", updateAdminReminderLabels);
 
   const baseRenderConversations = renderConversations;
   renderConversations = window.renderConversations = (filter, watch = true) => {
