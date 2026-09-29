@@ -548,14 +548,16 @@
     let attachmentUrl = form.dataset.attachmentUrl || null;
     const inlineGif = input.querySelector("img[src]");
     if (!attachmentPath && !attachmentUrl && inlineGif) {
-      const source = inlineGif.src;
-      if (/^https:\/\//i.test(source) && /\.gif(?:$|[?#])/i.test(source)) attachmentUrl = source;
-      else if (/^data:image\/gif/i.test(source)) {
-        const blob = await fetch(source).then(response => response.blob());
-        const uploaded = await window.conectaFirebase.uploadChatGif(user, blob);
-        attachmentPath = uploaded.path;
-        attachmentUrl = uploaded.url;
-      }
+      try {
+        const source = inlineGif.src;
+        if (/^https:\/\//i.test(source) && /\.gif(?:$|[?#])/i.test(source)) attachmentUrl = source;
+        else if (/^data:image\/gif/i.test(source)) {
+          const blob = await fetch(source).then(response => response.blob());
+          const uploaded = await window.conectaFirebase.uploadChatGif(user, blob);
+          attachmentPath = uploaded.path;
+          attachmentUrl = uploaded.url;
+        }
+      } catch (error) { showError(error); return; }
     }
     if (!conversation?.firestoreId || !user || (!text && !attachmentPath && !attachmentUrl)) return;
     const button = form.querySelector('button[type="submit"]');
