@@ -5,7 +5,7 @@
   const browserNotificationsEnabled = () => { try { return localStorage.getItem(notificationPrefsKey()) === "true"; } catch { return false; } };
   const showBrowserNotification = (title, body, tag) => {
     if (!browserNotificationsEnabled() || !("Notification" in window) || Notification.permission !== "granted") return false;
-    try { new Notification(title, { body, tag, icon: "/favicon.ico" }); return true; } catch { return false; }
+    try { new Notification(title, { body, tag,  }); return true; } catch { return false; }
   };
   const setProfileAvatar = (element, url, label = "") => {
     if (!element) return;
@@ -494,7 +494,7 @@
     const handleClipboard = async event => {
       const clipboard = event.clipboardData;
       if (!clipboard) return;
-      const gifItem = [...clipboard.items].find(item => item.kind === "file" && item.type === "image/gif");
+      const gifItem = Array.from(clipboard.items || []).find(item => item.kind === "file" && item.type === "image/gif");
       const html = clipboard.getData("text/html");
       let source = "";
       if (html) {
