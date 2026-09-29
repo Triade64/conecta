@@ -1,0 +1,241 @@
+:root {
+  --ink: #1d1d1b;
+  --muted: #6f746d;
+  --line: #ddded6;
+  --bg: #ebece4;
+  --purple: #223e2a;
+  --purple-light: #e8eee7;
+  --green: #223e2a;
+  --orange: #be6731;
+  --shadow: 0 12px 35px #1d1d1b12;
+  --brand-cream: #ebece4;
+  --brand-stone: #c8c7bb;
+  --brand-terracotta: #be6731;
+  --font-body: "Zabal", "Avenir Next", "Century Gothic", "Segoe UI", sans-serif;
+  --font-display: "Georgia", "Times New Roman", serif;
+}
+
+body {
+  font-family: var(--font-body);
+  background: var(--brand-cream);
+}
+
+.brand,
+.auth-brand {
+  gap: 9px;
+  color: var(--ink);
+  letter-spacing: 0;
+}
+
+.brand-logo {
+  display: block;
+  width: 126px;
+  height: auto;
+  object-fit: contain;
+}
+
+.brand-product {
+  border-left: 1px solid var(--brand-stone);
+  padding-left: 9px;
+  color: var(--brand-terracotta);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .4px;
+}
+
+.logo {
+  width: auto;
+  height: auto;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+  color: inherit;
+}
+
+.workspace {
+  background: #f7f7f2;
+  border-color: var(--line);
+}
+
+.workspace-mark {
+  width: 32px;
+  height: 32px;
+  padding: 5px;
+  border-radius: 8px;
+  background: var(--brand-cream);
+  object-fit: contain;
+}
+
+.nav-label {
+  color: #85877f;
+}
+
+.nav button.active,
+.channel.active {
+  background: var(--purple-light);
+  color: var(--purple);
+}
+
+.nav button:hover,
+.channel:hover {
+  background: #f0f1eb;
+}
+
+.channel:nth-child(2) .dot { background: var(--brand-terracotta); }
+.channel:nth-child(3) .dot { background: var(--green); }
+.channel:nth-child(4) .dot { background: var(--brand-stone); }
+.channel:nth-child(5) .dot { background: #777d72; }
+
+.avatar {
+  background: #f1e3d7;
+  color: var(--brand-terracotta);
+}
+
+.primary {
+  background: var(--purple);
+  box-shadow: 0 5px 12px #223e2a24;
+}
+
+.primary:hover {
+  background: #192e20;
+}
+
+.welcome h1,
+.view-toolbar h2,
+.auth-card h1,
+.card-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.eyebrow,
+.text-btn,
+.filter-pill.active,
+.record-action {
+  color: var(--brand-terracotta);
+}
+
+.stat-icon {
+  background: #e8eee7;
+  color: var(--green);
+}
+
+.stat:nth-child(2) .stat-icon {
+  background: #f4e6db;
+  color: var(--brand-terracotta);
+}
+
+.stat:nth-child(3) .stat-icon {
+  background: #e8eee7;
+  color: var(--green);
+}
+
+.stat:nth-child(4) .stat-icon {
+  background: #efeee8;
+  color: #626960;
+}
+
+.post-icon {
+  background: #f4e6db;
+  color: var(--brand-terracotta);
+}
+
+.post:nth-child(2) .post-icon {
+  background: #e8eee7;
+  color: var(--green);
+}
+
+.post:nth-child(3) .post-icon {
+  background: #efeee8;
+  color: #626960;
+}
+
+.tag {
+  background: #f4e6db;
+  color: #a74e21;
+}
+
+.tag.green,
+.role-badge {
+  background: #e8eee7;
+  color: var(--green);
+}
+
+.tag.purple {
+  background: #efeee8;
+  color: #626960;
+}
+
+.check.done {
+  background: var(--green);
+  border-color: var(--green);
+}
+
+.filter-pill.active {
+  background: #f4e6db;
+  border-color: #e7c3aa;
+}
+
+.conv-item:hover,
+.conv-item.active {
+  background: #eff2eb;
+}
+
+.chat-messages {
+  background: #f5f4ee;
+}
+
+.chat-messages .bubble:not(.mine) {
+  color: var(--ink);
+}
+
+.chat-messages .bubble.mine {
+  background: #e1eadf;
+  border-color: #d3dfd0;
+  color: #1d1d1b;
+}
+
+.field input:focus,
+.field textarea:focus,
+.field select:focus {
+  border-color: var(--brand-terracotta);
+  box-shadow: 0 0 0 3px #be67311a;
+}
+
+.modal-back {
+  background: #1d1d1b66;
+}
+
+.modal,
+.auth-card,
+.card,
+.stat {
+  border-color: #dedfd7;
+}
+
+.auth-screen {
+  background: radial-gradient(circle at 15% 10%, #dfe7dc 0, transparent 36%), var(--brand-cream);
+}
+
+.auth-card {
+  border-radius: 16px;
+}
+
+.auth-submit {
+  width: 100%;
+}
+
+.auth-link {
+  color: var(--brand-terracotta);
+}
+
+@media (max-width: 760px) {
+  .brand-logo { width: 116px; }
+  .brand-product { font-size: 10px; }
+}
+
+@media (min-width: 761px) and (max-width: 1000px) {
+  .brand-logo { width: 106px; }
+  .brand-product { font-size: 10px; }
+}
