@@ -259,6 +259,20 @@ body {
 body { color: var(--ink); background: #f5f5ef; }
 .sidebar { background: #fff; border-color: var(--line); }
 
+.profile-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.profile-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0; margin: 0; padding: 8px 20px 18px; }
+.profile-details > div { min-width: 0; padding: 12px 8px; border-bottom: 1px solid var(--line); }
+.profile-details dt { margin: 0 0 5px; color: var(--muted); font-size: 11px; }
+.profile-details dd { margin: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 650; }
+.password-form { padding: 8px 20px 20px; }
+.password-form .field { margin: 12px 0; }
+.password-form .field small { color: var(--muted); font-size: 11px; }
+.profile-form-actions { display: flex; justify-content: flex-end; margin-top: 16px; }
+.profile-feedback { display: none; margin-top: 10px; border-radius: 9px; padding: 10px 12px; font-size: 12px; line-height: 1.45; }
+.profile-feedback.error, .profile-feedback.success { display: block; }
+.profile-feedback.error { background: #fff1ef; color: #a82f23; }
+.profile-feedback.success { background: #e8eee7; color: #223e2a; }
+
 /* Mobile-first refinements: touch targets, safe areas and a usable chat viewport. */
 @media (max-width: 760px) {
   html { -webkit-text-size-adjust: 100%; }
@@ -290,6 +304,10 @@ body { color: var(--ink); background: #f5f5ef; }
   .card-head > * { min-width: 0; }
   .view-toolbar { align-items: stretch; flex-direction: column; gap: 12px; }
   .view-toolbar .primary { min-height: 44px; }
+  .profile-grid { grid-template-columns: 1fr; gap: 13px; }
+  .profile-details { padding-inline: 12px; }
+  .password-form { padding-inline: 14px; }
+  .profile-form-actions .primary { width: 100%; min-height: 46px; }
   .back-dashboard { min-height: 42px; }
   .conversation-layout {
     height: calc(100dvh - 148px);
