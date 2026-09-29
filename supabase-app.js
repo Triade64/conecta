@@ -47,8 +47,14 @@ const watchMessages = async (conversationId, callback) => {
   stopMessageSync = () => supabase.removeChannel(channel);
 };
 
+const authCompat = {
+  get currentUser() { return window.conectaCurrentUser || null; },
+  getUser: () => supabase.auth.getUser(),
+  signOut: () => supabase.auth.signOut()
+};
+
 window.conectaFirebase = {
-  app: supabase, auth: supabase.auth, db: supabase, config: { projectId: "fmyenjfzdwizpgretpkk" },
+  app: supabase, auth: authCompat, db: supabase, config: { projectId: "fmyenjfzdwizpgretpkk" },
   signInWithEmailAndPassword: (_auth, email, password) => supabase.auth.signInWithPassword({ email, password }),
   sendPasswordResetEmail: (_auth, email) => supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin }),
   signOut: _auth => supabase.auth.signOut(), startDataSync, ensureUserProfile,
