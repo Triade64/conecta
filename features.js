@@ -39,6 +39,16 @@
     const form = byId("form");
     delete form.dataset.featureAction;
     delete form.dataset.recordId;
+    if (type === "message") {
+      const destination = byId("destination");
+      if (destination) {
+        const directory = window.conectaDirectory || [];
+        const people = directory.map(person => `<option value="user:${person.id}">${escapeHtml(person.name || "Colaborador")} — ${escapeHtml(person.sector || person.role || "Equipe")}</option>`).join("");
+        const channels = allowedSectors().map(sector => `<option value="channel:${escapeHtml(sector)}">${escapeHtml(sector)}</option>`).join("");
+        destination.innerHTML = `<option value="" disabled selected>Selecione um destino</option><optgroup label="Conversa individual">${people || '<option disabled>Nenhum colaborador disponível</option>'}</optgroup><optgroup label="Canais permitidos">${channels}</optgroup>`;
+      }
+      byId("modalDesc").textContent = "Inicie uma conversa individual com qualquer colaborador ou envie ao canal do seu setor.";
+    }
   };
 
   const baseRenderNotices = renderNotices;
@@ -262,6 +272,20 @@
     });
   });
 
+  window.addEventListener("conecta-directory-sync", event => {
+    window.conectaDirectory = Array.isArray(event.detail) ? event.detail : [];
+  });
+
+  // Replace the legacy channel-only view with the RLS-filtered channel + 1:1 list.
+  window.addEventListener("conecta-conversations-sync", event => {
+    const people = window.conectaDirectory || [];
+    contacts = (event.detail || []).filter(c => c.kind === "channel" || c.kind === "direct")
+      .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
+      .map(c => ({ ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda", messages: [] }));
+    if (selectedContact >= contacts.length) selectedContact = 0;
+    if (byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Conversas") renderConversations();
+  });
+
   document.addEventListener("submit", async event => {
     const form = event.target;
     if (form.id === "composer") {
@@ -283,7 +307,7 @@
     if (form.id !== "form") return;
     const action = form.dataset.featureAction;
     const type = form.dataset.type;
-    if (!action && type !== "reminder") return;
+    if (!action && type !== "reminder" && type !== "message") return;
     event.preventDefault();
     event.stopImmediatePropagation();
     const fb = window.conectaFirebase;
@@ -310,6 +334,34 @@
         const dueAt = new Date(byId("when").value).toISOString();
         await fb.addReminder(currentUser(), { title: byId("title").value.trim(), due_at: dueAt });
         showToast("Lembrete salvo.");
+      } else if (type === "message") {
+        const user = currentUser();
+        const destination = byId("destination").value;
+        const text = byId("message").value.trim();
+        if (!user || !text || !destination) throw new Error("Escolha um destino e escreva a mensagem.");
+        let conversationId;
+        if (destination.startsWith("user:")) {
+          const personId = destination.slice(5);
+          conversationId = await fb.startDirectConversation(user, personId);
+        } else if (destination.startsWith("channel:")) {
+          conversationId = await fb.ensureChannel(user, destination.slice(8));
+        } else {
+          throw new Error("Destino inválido.");
+        }
+        await fb.sendMessage(user, conversationId, text);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        const conversation = contacts.find(item => item.firestoreId === conversationId);
+        byId("modalBack").classList.remove("show");
+        showDashboard();
+        renderView("Conversas");
+        const refreshedConversation = contacts.find(item => item.firestoreId === conversationId) || conversation;
+        if (refreshedConversation) {
+          selectedContact = contacts.indexOf(refreshedConversation);
+          renderConversations();
+        }
+        showToast("Mensagem enviada.");
+        delete form.dataset.featureAction;
+        return;
       } else return;
       delete form.dataset.featureAction;
       delete form.dataset.recordId;
