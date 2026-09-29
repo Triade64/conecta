@@ -6,6 +6,8 @@ const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const accountClient = createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false } });
 let stopDataSync = () => {};
 let stopMessageSync = () => {};
+let activeMessageChannel = null;
+let messageWatchGeneration = 0;
 
 const dispatch = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
 const normalize = (row, extra = {}) => ({ id: row.id, ...row, ...extra });
@@ -20,52 +22,76 @@ async function ensureUserProfile(user) {
 }
 
 async function loadData(user) {
-  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }] = await Promise.all([
+  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }] = await Promise.all([
     supabase.from("notices").select("*").order("created_at", { ascending: false }),
     supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false }),
     supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
     supabase.from("profiles").select("*").order("name"),
-    supabase.rpc("list_team_directory")
+    supabase.rpc("list_team_directory"),
+    supabase.rpc("get_unread_counts")
   ]);
   const colleagues = directory || [];
   const people = new Map(colleagues.map(person => [person.id, person]));
+  const unreadCounts = new Map((unreadRows || []).map(row => [row.conversation_id, Number(row.unread_count) || 0]));
   dispatch("conecta-notices-sync", (notices || []).map(x => ({ ...x, text: x.body, time: syncDate(x.created_at) })));
   dispatch("conecta-reminders-sync", (reminders || []).map(x => ({ ...x, title: x.title, time: syncDate(x.due_at || x.created_at), done: x.done })));
   dispatch("conecta-directory-sync", colleagues);
   dispatch("conecta-conversations-sync", (conversations || []).map(x => {
     const otherId = x.kind === "direct" ? (x.created_by === user.id ? x.direct_recipient_id : x.created_by) : null;
     const other = otherId ? people.get(otherId) : null;
-    return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", kind: x.kind, lastMessage: x.last_message };
+    return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", unreadCount: unreadCounts.get(x.id) || 0, kind: x.kind, lastMessage: x.last_message };
   }));
+  dispatch("conecta-unread-sync", Object.fromEntries(unreadCounts));
   if ((await ensureUserProfile(user)).role === "admin") dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
 }
 
 function startDataSync(user) {
   stopDataSync();
   loadData(user);
-  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).subscribe();
+  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).subscribe();
   stopDataSync = () => { supabase.removeChannel(channel); stopMessageSync(); };
 }
 
 const watchMessages = async (conversationId, callback) => {
-  stopMessageSync();
+  const generation = ++messageWatchGeneration;
+  const previousChannel = activeMessageChannel;
+  activeMessageChannel = null;
+  if (previousChannel) await supabase.removeChannel(previousChannel);
   const userId = window.conectaCurrentUser?.id;
   const refresh = async () => {
     const [{ data, error }, { data: hidden, error: hiddenError }] = await Promise.all([
       supabase.from("messages").select("*").eq("conversation_id", conversationId).order("created_at"),
       supabase.from("message_hidden_for").select("message_id").eq("user_id", userId)
     ]);
+    if (generation !== messageWatchGeneration) return;
     if (error) throw error;
     if (hiddenError) throw hiddenError;
     const hiddenIds = new Set((hidden || []).map(x => x.message_id));
-    callback((data || []).filter(x => !hiddenIds.has(x.id)).map(x => ({ id: x.id, ...x, text: x.text, createdAt: x.created_at, replyTo: x.reply_to, editedAt: x.edited_at, deletedAt: x.deleted_at })));
+    const visible = (data || []).filter(x => !hiddenIds.has(x.id));
+    callback(visible.map(x => ({ id: x.id, ...x, text: x.text, createdAt: x.created_at, replyTo: x.reply_to, editedAt: x.edited_at, deletedAt: x.deleted_at })));
+    if (userId && generation === messageWatchGeneration) {
+      const { error: readError } = await supabase.from("conversation_reads").upsert({ conversation_id: conversationId, user_id: userId, last_read_at: new Date().toISOString() }, { onConflict: "conversation_id,user_id" });
+      if (readError) console.error("Could not mark conversation as read", readError);
+      else {
+        const { data: unread, error: unreadError } = await supabase.rpc("get_unread_counts");
+        if (!unreadError && generation === messageWatchGeneration) dispatch("conecta-unread-sync", Object.fromEntries((unread || []).map(row => [row.conversation_id, Number(row.unread_count) || 0])));
+      }
+    }
   };
-  await refresh();
+  try { await refresh(); } catch (error) { console.error("Could not load conversation messages", error); return; }
+  if (generation !== messageWatchGeneration) return;
+  const refreshSafely = () => refresh().catch(error => console.error("Could not refresh conversation messages", error));
   const channel = supabase.channel("messages-" + conversationId)
-    .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: "conversation_id=eq." + conversationId }, refresh)
-    .on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + userId }, refresh)
+    .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: "conversation_id=eq." + conversationId }, refreshSafely)
+    .on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + userId }, refreshSafely)
     .subscribe();
-  stopMessageSync = () => supabase.removeChannel(channel);
+  activeMessageChannel = channel;
+  stopMessageSync = () => {
+    if (activeMessageChannel !== channel) return;
+    messageWatchGeneration++;
+    activeMessageChannel = null;
+    return supabase.removeChannel(channel);
+  };
 };
 
 const authCompat = {
@@ -116,6 +142,13 @@ window.conectaFirebase = {
     if (error) throw error;
     await loadData(user);
     return data;
+  },
+  markConversationRead: async (user, conversationId) => {
+    const { error } = await supabase.from("conversation_reads").upsert({ conversation_id: conversationId, user_id: user.id, last_read_at: new Date().toISOString() }, { onConflict: "conversation_id,user_id" });
+    if (error) throw error;
+    const { data, error: unreadError } = await supabase.rpc("get_unread_counts");
+    if (unreadError) throw unreadError;
+    dispatch("conecta-unread-sync", Object.fromEntries((data || []).map(row => [row.conversation_id, Number(row.unread_count) || 0])));
   },
   watchMessages,
   sendMessage: async (user, conversationId, text, replyTo = null) => {
