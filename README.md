@@ -7,8 +7,9 @@ Base inicial da aplicação interna do escritório, com foco em comunicação r�
 - `index.html`: aplicação navegável e responsiva.
 - `data/seed.json`: estrutura de setores e permissões, sem usuários fictícios.
 - `docs/architecture.md`: arquitetura funcional e plano de evolução.
+- Avisos e lembretes sincronizados em tempo real pelo Firestore para usuários autenticados.
 
-O protótipo usa `localStorage` para manter os dados no navegador. Isso permite testar a experiência sem servidor. A próxima camada substitui esse armazenamento por uma API e banco compartilhado.
+Conversas ainda estão em fase local; avisos e lembretes já usam o Firestore quando o usuário está autenticado e mantêm fallback local quando a conexão não está disponível.
 
 ## Firebase Hosting
 
