@@ -3,6 +3,8 @@
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
   const isActiveAdmin = () => window.conectaCurrentProfile?.role === "admin" && window.conectaCurrentProfile?.active === true;
   const byId = id => document.getElementById(id);
+  const writeCount = (id, count) => { if (byId(id)) byId(id).textContent = String(count); };
+  const plural = (count, one, many) => count === 1 ? one : many;
   const unreadStyle = document.createElement("style");
   unreadStyle.textContent = ".conversation-list .chat-name{display:flex;align-items:center;justify-content:space-between;gap:8px}.conversation-list .unread-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#223e2a;color:#fff;font-size:11px;font-weight:700;line-height:1}.conversation-list .unread-badge[hidden]{display:none}";
   document.head.append(unreadStyle);
@@ -24,6 +26,10 @@
   };
   window.addEventListener("conecta-unread-sync", event => {
     const counts = event.detail || {};
+    const totalUnread = Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0);
+    writeCount("unreadCount", totalUnread);
+    writeCount("conversationNavCount", totalUnread);
+    if (byId("unreadStatNote")) byId("unreadStatNote").textContent = totalUnread ? `${totalUnread} ${plural(totalUnread, "mensagem não lida", "mensagens não lidas")}` : "nenhuma pendência";
     contacts.forEach(contact => { contact.unreadCount = Number(counts[contact.firestoreId]) || 0; });
     updateUnreadBadges();
     if (typeof renderDashboardConversations === "function") renderDashboardConversations();
@@ -36,6 +42,83 @@
     button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); onClick(); });
     parent.append(button);
     return button;
+  };
+  const reminderAlertStyle = document.createElement("style");
+  reminderAlertStyle.textContent = ".reminder-alerts{position:fixed;right:22px;bottom:22px;z-index:9500;width:min(390px,calc(100vw - 32px));padding:16px;background:#fff;border:1px solid #e6d2aa;border-left:4px solid #d99a3e;border-radius:14px;box-shadow:0 16px 42px #18231929}.reminder-alerts[hidden]{display:none}.reminder-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:700}.reminder-alert-list{display:grid;gap:9px;margin:13px 0}.reminder-alert-item{font-size:13px}.reminder-alert-item small{display:block;color:#8a8e87;margin-top:3px}.reminder-alert-actions{display:flex;justify-content:space-between;align-items:center}.reminder-alert-close{border:0;background:transparent;color:#6d746d;font-size:19px}.reminder-alert-link{border:0;background:transparent;color:#315b3c;font-weight:700;padding:5px 0}";
+  document.head.append(reminderAlertStyle);
+  const getDismissedReminderAlerts = () => {
+    try { return new Set(JSON.parse(sessionStorage.getItem(`conecta-dismissed-reminders:${currentUserId() || "guest"}`) || "[]")); }
+    catch { return new Set(); }
+  };
+  const saveDismissedReminderAlerts = dismissed => {
+    try { sessionStorage.setItem(`conecta-dismissed-reminders:${currentUserId() || "guest"}`, JSON.stringify([...dismissed])); }
+    catch { /* session storage may be unavailable in private browsing */ }
+  };
+  const renderReminderAlerts = () => {
+    let box = byId("reminderAlerts");
+    if (!box) {
+      box = document.createElement("aside");
+      box.id = "reminderAlerts";
+      box.className = "reminder-alerts";
+      box.setAttribute("role", "status");
+      box.setAttribute("aria-live", "polite");
+      document.body.append(box);
+    }
+    const now = Date.now();
+    const cutoff = now + 24 * 60 * 60 * 1000;
+    const dismissed = getDismissedReminderAlerts();
+    const due = (Array.isArray(reminders) ? reminders : [])
+      .filter(item => !item.done && item.id && item.due_at)
+      .map(item => ({ ...item, dueTime: new Date(item.due_at).getTime() }))
+      .filter(item => Number.isFinite(item.dueTime) && item.dueTime <= cutoff && !dismissed.has(`${item.id}:${item.due_at}`))
+      .sort((a, b) => a.dueTime - b.dueTime);
+    if (!due.length) { box.hidden = true; return; }
+    box.hidden = false;
+    box.replaceChildren();
+    const header = document.createElement("div");
+    header.className = "reminder-alert-head";
+    const title = document.createElement("span");
+    title.textContent = "Lembretes próximos";
+    const close = document.createElement("button");
+    close.type = "button";
+    close.className = "reminder-alert-close";
+    close.textContent = "×";
+    close.setAttribute("aria-label", "Dispensar avisos de lembretes");
+    header.append(title, close);
+    const list = document.createElement("div");
+    list.className = "reminder-alert-list";
+    due.slice(0, 4).forEach(item => {
+      const row = document.createElement("div");
+      row.className = "reminder-alert-item";
+      const name = document.createElement("strong");
+      name.textContent = item.title || "Lembrete";
+      const time = document.createElement("small");
+      const dueDate = new Date(item.dueTime);
+      const when = dueDate.toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+      time.textContent = item.dueTime < now ? `Atrasado · ${when}` : `Vence em breve · ${when}`;
+      row.append(name, time);
+      list.append(row);
+    });
+    const actions = document.createElement("div");
+    actions.className = "reminder-alert-actions";
+    const more = document.createElement("span");
+    more.textContent = due.length > 4 ? `+${due.length - 4} outros` : "";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.className = "reminder-alert-link";
+    open.textContent = "Ver lembretes →";
+    actions.append(more, open);
+    const dismiss = () => {
+      due.forEach(item => dismissed.add(`${item.id}:${item.due_at}`));
+      saveDismissedReminderAlerts(dismissed);
+      box.hidden = true;
+    };
+    close.onclick = dismiss;
+    open.onclick = () => {
+      dismiss();
+      document.querySelector('[data-view="Lembretes"]')?.click();
+    };
+    box.append(header, list, actions);
   };
   const showError = error => {
     console.error("Conecta action failed", error);
@@ -116,6 +199,11 @@
   const baseRenderReminders = renderReminders;
   renderReminders = window.renderReminders = () => {
     baseRenderReminders();
+    const pending = reminders.filter(reminder => !reminder.done).length;
+    writeCount("remCount", pending);
+    writeCount("reminderNavCount", pending);
+    if (byId("reminderStatNote")) byId("reminderStatNote").textContent = pending ? `${pending} ${plural(pending, "lembrete pendente", "lembretes pendentes")}` : "nenhum lembrete pendente";
+    renderReminderAlerts();
     const uid = currentUserId();
     // Completion must be persisted in Supabase; the legacy renderer only changed local state.
     document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach(row => {
@@ -434,15 +522,77 @@
     renderDashboardNotices();
     renderDashboardConversations();
   };
+  const updateNoticeCounts = event => {
+    const count = Array.isArray(event.detail) ? event.detail.length : 0;
+    writeCount("noticeCount", count);
+    writeCount("noticeNavCount", count);
+    if (byId("noticeStatNote")) byId("noticeStatNote").textContent = count ? `${count} ${plural(count, "aviso disponível", "avisos disponíveis")}` : "nenhum aviso publicado";
+  };
   const dashboardStyle = document.createElement("style");
   dashboardStyle.textContent = ".dashboard-conversation{width:100%;border:0;background:transparent;text-align:left;font:inherit;cursor:pointer}.dashboard-conversation:hover{background:#f8faf7;border-radius:10px}.dashboard-conversation .chat-name{display:block}.dashboard-conversation .chat-time{line-height:1.8}.dashboard-conversation .unread-badge{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:#223e2a;color:white;font-size:10px;font-weight:700}";
   document.head.append(dashboardStyle);
-  window.addEventListener("conecta-notices-sync", renderDashboardPanels);
-  window.addEventListener("conecta-notices-sync", renderDashboardPanels);
+  window.addEventListener("conecta-notices-sync", event => { updateNoticeCounts(event); renderDashboardPanels(); });
+  window.addEventListener("conecta-reminders-sync", renderReminderAlerts);
   window.addEventListener("conecta-messages-sync", renderDashboardConversations);
   window.addEventListener("conecta-unread-sync", () => {
     renderDashboardConversations();
   });
+  window.addEventListener("conecta-online-count-sync", event => {
+    const count = Number(event.detail) || 0;
+    writeCount("onlineCount", count);
+    if (byId("onlineStatNote")) byId("onlineStatNote").textContent = count ? `${count} ${plural(count, "pessoa conectada", "pessoas conectadas")}` : "nenhum usuário conectado";
+  });
+  let shownAnnouncementKey = "";
+  let latestAnnouncement = null;
+  const announcementStyle = document.createElement("style");
+  announcementStyle.textContent = ".global-announcement{position:fixed;inset:0;z-index:12000;display:grid;place-items:center;padding:20px;background:#132217a8}.global-announcement[hidden]{display:none}.global-announcement-card{width:min(520px,100%);padding:28px;background:#fff;border-radius:20px;box-shadow:0 24px 80px #0004}.global-announcement-card h2{margin:0 0 12px;font-size:21px;color:#223e2a}.global-announcement-card p{white-space:pre-wrap;line-height:1.65;color:#596259;margin:0}.global-announcement-card .primary{display:block;margin:24px 0 0 auto}.global-announcement-admin{margin:18px 0}.global-announcement-admin .admin-form{padding:18px 20px}.global-announcement-admin .admin-actions{padding:4px 20px 20px;gap:10px}";
+  document.head.append(announcementStyle);
+  window.addEventListener("conecta-global-announcement-sync", event => {
+    const announcement = event.detail;
+    latestAnnouncement = announcement;
+    if (!announcement?.is_active || !announcement.updated_at) return;
+    const key = `${currentUserId() || ""}:${announcement.updated_at}`;
+    if (key === shownAnnouncementKey) return;
+    shownAnnouncementKey = key;
+    let modal = byId("globalAnnouncementModal");
+    if (!modal) {
+      modal = document.createElement("div"); modal.id = "globalAnnouncementModal"; modal.className = "global-announcement";
+      modal.setAttribute("role", "dialog"); modal.setAttribute("aria-modal", "true"); modal.setAttribute("aria-labelledby", "globalAnnouncementTitle"); document.body.append(modal);
+    }
+    modal.replaceChildren();
+    const card = document.createElement("section"); card.className = "global-announcement-card";
+    const title = document.createElement("h2"); title.id = "globalAnnouncementTitle"; title.textContent = announcement.title || "Aviso da administração";
+    const body = document.createElement("p"); body.textContent = announcement.body || "";
+    const confirm = document.createElement("button"); confirm.className = "primary"; confirm.textContent = "Entendi"; confirm.addEventListener("click", () => { modal.hidden = true; });
+    card.append(title, body, confirm); modal.append(card); modal.hidden = false; confirm.focus();
+  });
+  window.addEventListener("conecta-auth-session-reset", () => { shownAnnouncementKey = ""; });
+  const baseRenderAdminForAnnouncement = renderAdmin;
+  renderAdmin = async () => {
+    await baseRenderAdminForAnnouncement();
+    if (!isActiveAdmin() || !byId("viewPanel")?.classList.contains("show") || byId("crumb")?.textContent !== "Administração" || byId("globalAnnouncementAdmin")) return;
+    const panel = byId("viewPanel"); const card = document.createElement("section"); card.id = "globalAnnouncementAdmin"; card.className = "card global-announcement-admin";
+    const head = document.createElement("div"); head.className = "card-head"; const heading = document.createElement("div");
+    heading.innerHTML = '<div class="card-title">Aviso global no login</div><div class="card-sub">Será exibido para todos os colaboradores ao entrarem no Conecta.</div>'; head.append(heading);
+    const form = document.createElement("form"); form.className = "admin-form";
+    const titleField = document.createElement("div"); titleField.className = "field full"; titleField.innerHTML = '<label for="globalAnnouncementTitleInput">Título</label><input id="globalAnnouncementTitleInput" maxlength="120" required placeholder="Ex.: Manutenção do sistema">';
+    const bodyField = document.createElement("div"); bodyField.className = "field full"; bodyField.innerHTML = '<label for="globalAnnouncementBodyInput">Mensagem</label><textarea id="globalAnnouncementBodyInput" maxlength="4000" required placeholder="Escreva o aviso que todos devem ler"></textarea>';
+    if (latestAnnouncement) { titleField.querySelector("input").value = latestAnnouncement.title || ""; bodyField.querySelector("textarea").value = latestAnnouncement.body || ""; }
+    const actions = document.createElement("div"); actions.className = "admin-actions full";
+    const publish = document.createElement("button"); publish.className = "primary"; publish.type = "submit"; publish.textContent = "Publicar aviso global";
+    const deactivate = document.createElement("button"); deactivate.className = "secondary"; deactivate.type = "button"; deactivate.textContent = "Desativar aviso";
+    actions.append(deactivate, publish); form.append(titleField, bodyField, actions); card.append(head, form); panel.querySelector(".card")?.before(card);
+    form.addEventListener("submit", async event => {
+      event.preventDefault(); const fb = window.conectaFirebase; const user = currentUser();
+      try { await fb.saveGlobalAnnouncement(user, { title: byId("globalAnnouncementTitleInput").value.trim(), body: byId("globalAnnouncementBodyInput").value.trim() }); showToast("Aviso global publicado"); }
+      catch (error) { console.error(error); showToast("Não foi possível publicar o aviso global"); }
+    });
+    deactivate.addEventListener("click", async () => {
+      const fb = window.conectaFirebase; const user = currentUser();
+      try { await fb.deactivateGlobalAnnouncement(user); showToast("Aviso global desativado"); }
+      catch (error) { console.error(error); showToast("Não foi possível desativar o aviso"); }
+    });
+  };
 
   // Replace the legacy channel-only view with the RLS-filtered channel + 1:1 list.
   window.addEventListener("conecta-conversations-sync", event => {
