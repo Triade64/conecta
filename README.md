@@ -22,7 +22,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 8. `supabase/chat_realtime_security.sql`
 9. `supabase/global-announcements-presence.sql`
 
-O último script configura a agenda de vários avisos globais, imagens privadas e políticas de presença. É possível programar início e fim da exibição. Lembretes permanecem privados para cada usuário, inclusive para administradores.
+O último script configura a agenda de vários avisos globais, imagens privadas e políticas de presença. As imagens dos avisos são redimensionadas e convertidas para WebP no navegador antes do envio; o aplicativo limita o arquivo otimizado a 900 KB e o bucket a 1 MiB. É possível programar início e fim da exibição. Lembretes permanecem privados para cada usuário, inclusive para administradores.
 
 ## Configuração da Vercel
 
