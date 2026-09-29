@@ -3,7 +3,7 @@
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
   const byId = id => document.getElementById(id);
   const unreadStyle = document.createElement("style");
-  unreadStyle.textContent = ".conversation-list .chat-name{display:flex;align-items:center;justify-content:space-between;gap:8px}.conversation-list .unread-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#16875d;color:#fff;font-size:11px;font-weight:700;line-height:1}.conversation-list .unread-badge[hidden]{display:none}";
+  unreadStyle.textContent = ".conversation-list .chat-name{display:flex;align-items:center;justify-content:space-between;gap:8px}.conversation-list .unread-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#223e2a;color:#fff;font-size:11px;font-weight:700;line-height:1}.conversation-list .unread-badge[hidden]{display:none}";
   document.head.append(unreadStyle);
   const updateUnreadBadges = () => {
     document.querySelectorAll(".conversation-list .conv-item").forEach(button => {
