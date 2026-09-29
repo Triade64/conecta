@@ -121,6 +121,14 @@ create policy messages_delete_scoped on public.messages for delete to authentica
     where c.id = conversation_id and c.kind = 'channel' and private.can_access_sector(c.sector)
   )));
 
+-- Active administrators can review and remove any message, including in
+-- individual conversations. App deletion remains a soft delete via deleted_at.
+create policy messages_admin_read_all on public.messages for select to authenticated
+  using (private.is_active_admin());
+create policy messages_admin_update_all on public.messages for update to authenticated
+  using (private.is_active_admin())
+  with check (private.is_active_admin());
+
 grant select, insert, update, delete on public.profiles, public.notices, public.reminders,
   public.conversations, public.messages to authenticated;
 
