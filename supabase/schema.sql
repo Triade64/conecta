@@ -72,3 +72,17 @@ returns trigger language plpgsql security definer set search_path = public
 as $$ begin insert into public.profiles (id, name, email) values (new.id, coalesce(new.raw_user_meta_data->>'name', split_part(new.email, '@', 1)), new.email) on conflict (id) do nothing; return new; end; $$;
 drop trigger if exists on_auth_user_created on auth.users;
 create trigger on_auth_user_created after insert on auth.users for each row execute procedure public.handle_new_user();
+
+create or replace function public.bootstrap_first_admin()
+returns json language plpgsql security definer set search_path = public
+as $$
+declare total_profiles integer;
+begin
+  select count(*) into total_profiles from public.profiles;
+  if total_profiles = 0 then
+    update public.profiles set role = 'admin', sector = 'Administração' where id = auth.uid();
+  end if;
+  return json_build_object('role', (select role from public.profiles where id = auth.uid()));
+end;
+$$;
+grant execute on function public.bootstrap_first_admin() to authenticated;
