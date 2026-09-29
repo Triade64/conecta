@@ -146,7 +146,7 @@ window.conectaFirebase = {
   signInWithEmailAndPassword: (_auth, email, password) => supabase.auth.signInWithPassword({ email, password }),
   sendPasswordResetEmail: (_auth, email) => supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin }),
   signOut: _auth => supabase.auth.signOut(), startDataSync, ensureUserProfile,
-  changePassword: async ({ currentPassword, newPassword }) => {
+  changePassword: async ({ currentPassword, newPassword, nonce = "" }) => {
     const signedInUser = window.conectaCurrentUser;
     if (!signedInUser?.id || !signedInUser.email) throw new Error("Sua sessão expirou. Entre novamente para trocar a senha.");
 
@@ -159,18 +159,30 @@ window.conectaFirebase = {
     if (verified.user?.id !== signedInUser.id) throw new Error("Não foi possível validar a conta conectada.");
 
     // Reuse the freshly verified session for the authenticated password update.
-    if (verified.session) {
+    if (verified.session && !nonce) {
       const { error: sessionError } = await supabase.auth.setSession({
         access_token: verified.session.access_token,
         refresh_token: verified.session.refresh_token
       });
       if (sessionError) throw sessionError;
     }
-    const { data, error } = await supabase.auth.updateUser({
+    const update = {
       current_password: currentPassword,
       password: newPassword
-    });
-    if (error) throw error;
+    };
+    if (nonce) update.nonce = nonce;
+    const { data, error } = await supabase.auth.updateUser(update);
+    if (error) {
+      const authError = `${error.code || ""} ${error.message || ""}`.toLowerCase();
+      if (!nonce && authError.includes("reauthentication")) {
+        const { error: reauthError } = await supabase.auth.reauthenticate();
+        if (reauthError) throw reauthError;
+        const challenge = new Error("Foi enviado um código de confirmação para o e-mail da sua conta.");
+        challenge.code = "reauthentication_required";
+        throw challenge;
+      }
+      throw error;
+    }
     return data.user;
   },
   createUser: async (_admin, data) => {
