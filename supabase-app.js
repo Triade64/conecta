@@ -49,7 +49,14 @@ function startDataSync(user) {
   stopDataSync();
   loadData(user);
   const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).subscribe();
-  stopDataSync = () => { supabase.removeChannel(channel); stopMessageSync(); };
+  stopDataSync = () => {
+    supabase.removeChannel(channel);
+    messageWatchGeneration++;
+    const messageChannel = activeMessageChannel;
+    activeMessageChannel = null;
+    stopMessageSync = () => {};
+    if (messageChannel) supabase.removeChannel(messageChannel);
+  };
 }
 
 const watchMessages = async (conversationId, callback) => {
