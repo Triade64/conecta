@@ -1,6 +1,39 @@
 (() => {
   const currentUserId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.uid || null;
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
+  const notificationPrefsKey = () => `conecta-browser-notifications:${currentUserId() || "guest"}`;
+  const browserNotificationsEnabled = () => { try { return localStorage.getItem(notificationPrefsKey()) === "true"; } catch { return false; } };
+  const showBrowserNotification = (title, body, tag) => {
+    if (!browserNotificationsEnabled() || !("Notification" in window) || Notification.permission !== "granted") return false;
+    try { new Notification(title, { body, tag, icon: "/favicon.ico" }); return true; } catch { return false; }
+  };
+  const setProfileAvatar = (element, url, label = "") => {
+    if (!element) return;
+    element.setAttribute("aria-label", label || "Foto do perfil");
+    element.style.backgroundImage = url ? `url("${url.replace(/["\\\\]/g, "")}")` : "";
+    element.style.backgroundSize = url ? "cover" : "";
+    element.style.backgroundPosition = url ? "center" : "";
+    element.style.backgroundRepeat = url ? "no-repeat" : "";
+    if (url) element.textContent = "";
+  };
+  const optimizeProfilePhoto = async file => {
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) throw new Error("Escolha uma foto JPG, PNG ou WEBP.");
+    if (file.size > 12 * 1024 * 1024) throw new Error("A foto original precisa ter até 12 MB.");
+    const bitmap = await createImageBitmap(file);
+    try {
+      const edge = Math.min(bitmap.width, bitmap.height);
+      const sx = Math.floor((bitmap.width - edge) / 2);
+      const sy = Math.floor((bitmap.height - edge) / 2);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 512;
+      canvas.getContext("2d").drawImage(bitmap, sx, sy, edge, edge, 0, 0, 512, 512);
+      const encode = quality => new Promise((resolve, reject) => canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("Não foi possível tratar esta foto.")), "image/webp", quality));
+      let blob = await encode(0.84);
+      if (blob.size > 250 * 1024) blob = await encode(0.7);
+      if (blob.size > 300 * 1024) throw new Error("Não foi possível reduzir esta foto ao limite permitido. Escolha outra imagem.");
+      return new File([blob], "avatar.webp", { type: "image/webp", lastModified: Date.now() });
+    } finally { bitmap.close?.(); }
+  };
   const isActiveAdmin = () => window.conectaCurrentProfile?.role === "admin" && window.conectaCurrentProfile?.active === true;
   const byId = id => document.getElementById(id);
   const writeCount = (id, count) => { if (byId(id)) byId(id).textContent = String(count); };
@@ -60,6 +93,7 @@
     const totalUnread = Object.values(counts).reduce((sum, value) => sum + (Number(value) || 0), 0);
     writeCount("unreadCount", totalUnread);
     writeCount("conversationNavCount", totalUnread);
+    writeNavCount("conversationNavCount", totalUnread);
     if (byId("unreadStatNote")) byId("unreadStatNote").textContent = totalUnread ? `${totalUnread} ${plural(totalUnread, "mensagem não lida", "mensagens não lidas")}` : "nenhuma pendência";
     contacts.forEach(contact => { contact.unreadCount = Number(counts[contact.firestoreId]) || 0; });
     updateUnreadBadges();
@@ -73,6 +107,17 @@
     button.addEventListener("click", event => { event.preventDefault(); event.stopPropagation(); onClick(); });
     parent.append(button);
     return button;
+  };
+  const badgeStyle = document.createElement("style");
+  badgeStyle.textContent = ".nav .count.has-items{background:#223e2a;color:#fff;border-radius:999px;min-width:22px;text-align:center;font-weight:700;box-shadow:0 0 0 2px #e8eee7}";
+  document.head.append(badgeStyle);
+  const writeNavCount = (id, count) => {
+    const badge = byId(id);
+    if (!badge) return;
+    const value = Number(count) || 0;
+    badge.textContent = value > 99 ? "99+" : String(value);
+    badge.classList.toggle("has-items", value > 0);
+    badge.setAttribute("aria-label", value ? `${value} ${id === "noticeNavCount" ? plural(value, "aviso", "avisos") : id === "reminderNavCount" ? plural(value, "lembrete pendente", "lembretes pendentes") : plural(value, "mensagem não lida", "mensagens não lidas")}` : "Nenhuma pendência");
   };
   const reminderAlertStyle = document.createElement("style");
   reminderAlertStyle.textContent = ".reminder-alerts{position:fixed;right:22px;bottom:22px;z-index:9500;width:min(390px,calc(100vw - 32px));padding:16px;background:#fff;border:1px solid #e6d2aa;border-left:4px solid #d99a3e;border-radius:14px;box-shadow:0 16px 42px #18231929}.reminder-alerts[hidden]{display:none}.reminder-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:700}.reminder-alert-list{display:grid;gap:9px;margin:13px 0}.reminder-alert-item{font-size:13px}.reminder-alert-item small{display:block;color:#8a8e87;margin-top:3px}.reminder-alert-actions{display:flex;justify-content:space-between;align-items:center}.reminder-alert-close{border:0;background:transparent;color:#6d746d;font-size:19px}.reminder-alert-link{border:0;background:transparent;color:#315b3c;font-weight:700;padding:5px 0}";
@@ -103,6 +148,19 @@
       .map(item => ({ ...item, dueTime: new Date(item.due_at).getTime() }))
       .filter(item => Number.isFinite(item.dueTime) && item.dueTime <= cutoff && !dismissed.has(`${item.id}:${item.due_at}`))
       .sort((a, b) => a.dueTime - b.dueTime);
+    if (document.visibilityState !== "visible" && browserNotificationsEnabled() && "Notification" in window && Notification.permission === "granted") {
+      const key = `conecta-notified-reminders:${currentUserId() || "guest"}`;
+      let sent = [];
+      try { sent = JSON.parse(localStorage.getItem(key) || "[]"); } catch {}
+      const sentSet = new Set(sent);
+      due.forEach(item => {
+        const reminderKey = `${item.id}:${item.due_at}`;
+        if (sentSet.has(reminderKey)) return;
+        showBrowserNotification("Lembrete próximo do vencimento", item.title || "Um lembrete vence nas próximas 24 horas.", reminderKey);
+        sentSet.add(reminderKey);
+      });
+      try { localStorage.setItem(key, JSON.stringify([...sentSet].slice(-100))); } catch {}
+    }
     if (!due.length) { box.hidden = true; return; }
     box.hidden = false;
     box.replaceChildren();
@@ -151,6 +209,26 @@
     };
     box.append(header, list, actions);
   };
+  window.addEventListener("conecta-incoming-message-notification", event => {
+    const detail = event.detail || {};
+    if (!detail.id) return;
+    const body = `${detail.authorName || "Um colaborador"} enviou uma mensagem em ${detail.conversationName || "uma conversa"}.`;
+    if (document.visibilityState === "visible") showToast(body);
+    else showBrowserNotification("Nova mensagem", body, `message-${detail.id}`);
+  });
+  window.addEventListener("conecta-profile-photo-sync", event => {
+    const detail = event.detail || {};
+    if (detail.id === currentUserId()) setProfileAvatar(byId("currentUserInitials"), detail.avatar_url, "Sua foto de perfil");
+    document.querySelectorAll(".message-row").forEach(row => {
+      const messageId = row.querySelector(".bubble")?.dataset.messageId;
+      const message = contacts[selectedContact]?.messages?.find(item => item.id === messageId);
+      if (message?.authorId === detail.id) setProfileAvatar(row.querySelector(".message-avatar"), detail.avatar_url, message.authorName);
+    });
+  });
+  window.addEventListener("conecta-profile-ready", event => {
+    const profile = event.detail || {};
+    if (profile.avatar_url) setProfileAvatar(byId("currentUserInitials"), profile.avatar_url, "Sua foto de perfil");
+  });
   const showError = error => {
     console.error("Conecta action failed", error);
     showToast(error?.message || "Não foi possível concluir a ação.");
@@ -233,6 +311,7 @@
     const pending = reminders.filter(reminder => !reminder.done).length;
     writeCount("remCount", pending);
     writeCount("reminderNavCount", pending);
+    writeNavCount("reminderNavCount", pending);
     if (byId("reminderStatNote")) byId("reminderStatNote").textContent = pending ? `${pending} ${plural(pending, "lembrete pendente", "lembretes pendentes")}` : "nenhum lembrete pendente";
     renderReminderAlerts();
     const uid = currentUserId();
@@ -302,11 +381,69 @@
     if (view === "Lembretes") renderReminders();
   };
 
+  const addEmojiPicker = conversation => {
+    const composer = byId("composer"), input = byId("chatInput");
+    if (!composer || !input || composer.querySelector(".emoji-compose-tools")) return;
+    const emojis = ["😀","😃","😄","😁","😅","😂","🤣","😊","😉","😍","🥰","😘","🤔","😮","😢","😭","😎","🥳","🙏","👏","👍","👎","❤️","💚","🔥","✨","🎉","✅","👀","🤝","💪","📌","💡","☕","📣","🙌"];
+    const tools = document.createElement("div");
+    tools.className = "emoji-compose-tools";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "emoji-toggle";
+    toggle.textContent = "😀";
+    toggle.setAttribute("aria-label", "Abrir seletor de emojis");
+    toggle.setAttribute("aria-expanded", "false");
+    const picker = document.createElement("div");
+    picker.className = "emoji-picker";
+    picker.hidden = true;
+    picker.setAttribute("role", "group");
+    picker.setAttribute("aria-label", "Emojis");
+    let selection = [input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length];
+    const saveSelection = () => { selection = [input.selectionStart ?? selection[0], input.selectionEnd ?? selection[1]]; };
+    input.addEventListener("select", saveSelection);
+    input.addEventListener("keyup", saveSelection);
+    input.addEventListener("click", saveSelection);
+    emojis.forEach(emoji => {
+      const choice = document.createElement("button");
+      choice.type = "button";
+      choice.className = "emoji-choice";
+      choice.textContent = emoji;
+      choice.setAttribute("aria-label", emoji);
+      choice.addEventListener("pointerdown", event => { event.preventDefault(); saveSelection(); });
+      choice.addEventListener("click", () => {
+        input.focus();
+        input.setRangeText(emoji, selection[0], selection[1], "end");
+        saveSelection();
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+      });
+      picker.append(choice);
+    });
+    toggle.addEventListener("click", () => {
+      picker.hidden = !picker.hidden;
+      toggle.setAttribute("aria-expanded", String(!picker.hidden));
+    });
+    tools.append(toggle, picker);
+    composer.before(tools);
+    composer.closest(".conversation-chat")?.addEventListener("click", event => {
+      if (!tools.contains(event.target)) { picker.hidden = true; toggle.setAttribute("aria-expanded", "false"); }
+    });
+  };
+  const emojiStyle = document.createElement("style");
+  emojiStyle.textContent = ".emoji-compose-tools{position:relative;display:flex;justify-content:flex-end;padding:4px 10px 0}.emoji-toggle{border:0;background:transparent;border-radius:8px;padding:5px 8px;font-size:21px;cursor:pointer}.emoji-toggle:hover{background:#edf2eb}.emoji-picker{position:absolute;right:8px;bottom:42px;z-index:8;width:min(300px,calc(100vw - 60px));padding:8px;background:#fff;border:1px solid #dfe5dc;border-radius:12px;box-shadow:0 10px 28px #18231924;display:grid;grid-template-columns:repeat(6,1fr);gap:3px}.emoji-picker[hidden]{display:none}.emoji-choice{border:0;background:transparent;border-radius:7px;padding:6px 2px;font-size:21px;cursor:pointer}.emoji-choice:hover{background:#edf2eb}.profile-photo-area{display:flex;align-items:center;gap:14px;margin:16px 0}.profile-photo-preview{width:76px;height:76px;border-radius:50%;display:grid;place-items:center;flex:0 0 76px;background:#e8eee7;color:#223e2a;font-weight:700;font-size:22px;object-fit:cover}.profile-photo-controls{display:grid;gap:6px}.profile-photo-controls small,.notification-setting small{color:#6f746d}.notification-setting{display:grid;gap:12px}.profile-feedback{margin-top:8px}.profile-grid{align-items:start}";
+  document.head.append(emojiStyle);
+
   const baseRenderConversations = renderConversations;
   renderConversations = window.renderConversations = (filter, watch = true) => {
     baseRenderConversations(filter, watch);
     updateUnreadBadges();
     const conversation = contacts[selectedContact];
+    addEmojiPicker(conversation || {});
+    document.querySelectorAll(".conversation-list .conv-item").forEach(button => {
+      const item = contacts[Number(button.dataset.contact)];
+      const avatar = button.querySelector(".person");
+      const colleague = (window.conectaDirectory || []).find(person => person.id === item?.directUserId);
+      if (avatar && colleague?.avatar_url) setProfileAvatar(avatar, colleague.avatar_url, colleague.name || item?.name);
+    });
     const box = byId("chatMessages");
     if (!conversation || !box) return;
     const raw = window.conectaRawMessagesConversationId === conversation.firestoreId ? (window.conectaRawMessages || []) : [];
@@ -328,6 +465,11 @@
       const message = conversation.messages[index];
       const bubble = row.querySelector(".bubble");
       const stack = row.querySelector(".message-stack");
+      const avatar = row.querySelector(".message-avatar");
+      const photo = message.authorId === currentUserId()
+        ? window.conectaCurrentProfile?.avatar_url
+        : (window.conectaDirectory || []).find(person => person.id === message.authorId)?.avatar_url;
+      if (avatar && photo) setProfileAvatar(avatar, photo, message.authorName || "Foto do colaborador");
       if (!message || !bubble || !stack) return;
       bubble.dataset.messageId = message.id || "";
       if (message.deletedAt) {
@@ -557,6 +699,7 @@
     const count = Array.isArray(event.detail) ? event.detail.length : 0;
     writeCount("noticeCount", count);
     writeCount("noticeNavCount", count);
+    writeNavCount("noticeNavCount", count);
     if (byId("noticeStatNote")) byId("noticeStatNote").textContent = count ? `${count} ${plural(count, "aviso disponível", "avisos disponíveis")}` : "nenhum aviso publicado";
   };
   const dashboardStyle = document.createElement("style");
@@ -735,7 +878,65 @@
       ["Setor", profile.sector || "—"],
       ["Acesso", roleNames[profile.role] || "Colaborador"]
     ];
-    panel.innerHTML = '<div class="view-toolbar"><div><h2>Meu perfil</h2><p>Confira os dados da sua conta e atualize sua senha de acesso.</p></div></div><div class="profile-grid"><section class="card"><div class="card-head"><div><div class="card-title">Dados da conta</div><div class="card-sub">Informações vinculadas ao seu usuário.</div></div></div><dl class="profile-details">' + values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") + '</dl></section><section class="card"><div class="card-head"><div><div class="card-title">Trocar senha</div><div class="card-sub">Use a senha atual para definir uma nova.</div></div></div><form class="password-form" id="profilePasswordForm"><div class="field"><label for="profileCurrentPassword">Senha atual</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="profileNewPassword">Nova senha</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small>Use pelo menos 8 caracteres.</small></div><div class="field"><label for="profileConfirmPassword">Confirme a nova senha</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div><div class="field profile-reauth-field" id="profileReauthField" hidden><label for="profileReauthCode">Código enviado ao seu e-mail</label><input id="profileReauthCode" name="nonce" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Digite o código de confirmação"></div><div class="profile-feedback" id="passwordChangeFeedback" role="status" aria-live="polite"></div><div class="profile-form-actions"><button class="primary" type="submit">Salvar nova senha</button></div></form></section></div>';
+    panel.innerHTML = '<div class="view-toolbar"><div><h2>Meu perfil</h2><p>Confira os dados da sua conta e atualize sua senha de acesso.</p></div></div><div class="profile-grid"><section class="card"><div class="card-head"><div><div class="card-title">Dados da conta</div><div class="card-sub">Informações vinculadas ao seu usuário.</div></div></div><div class="profile-photo-area"><img class="profile-photo-preview" id="profilePhotoPreview" alt="Foto do perfil" src="" style="display:none"><div class="profile-photo-preview" id="profilePhotoFallback"></div><div class="profile-photo-controls"><label class="text-btn" for="profilePhotoInput">Escolher foto</label><input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><small>JPG, PNG ou WEBP. A imagem é ajustada e otimizada automaticamente.</small><div class="profile-feedback" id="profilePhotoFeedback" role="status" aria-live="polite"></div></div></div><dl class="profile-details">' + values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") + '</dl></section><section class="card"><div class="card-head"><div><div class="card-title">Notificações</div><div class="card-sub">Novas mensagens e lembretes com vencimento nas próximas 24 horas.</div></div></div><div class="notification-setting"><button class="primary" id="browserNotificationToggle" type="button">Ativar notificações no navegador</button><small id="browserNotificationStatus" role="status"></small></div></section><section class="card"><div class="card-head"><div><div class="card-title">Trocar senha</div><div class="card-sub">Use a senha atual para definir uma nova.</div></div></div><form class="password-form" id="profilePasswordForm"><div class="field"><label for="profileCurrentPassword">Senha atual</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="profileNewPassword">Nova senha</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small>Use pelo menos 8 caracteres.</small></div><div class="field"><label for="profileConfirmPassword">Confirme a nova senha</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div><div class="field profile-reauth-field" id="profileReauthField" hidden><label for="profileReauthCode">Código enviado ao seu e-mail</label><input id="profileReauthCode" name="nonce" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Digite o código de confirmação"></div><div class="profile-feedback" id="passwordChangeFeedback" role="status" aria-live="polite"></div><div class="profile-form-actions"><button class="primary" type="submit">Salvar nova senha</button></div></form></section></div>';
+    const photoPreview = byId("profilePhotoPreview");
+    const photoFallback = byId("profilePhotoFallback");
+    const profileName = profile.name || user.user_metadata?.name || user.email || "?";
+    photoFallback.textContent = profileName.split(/[ ._-]+/).map(part => part[0]).join("").slice(0,2).toUpperCase();
+    if (profile.avatar_url) {
+      photoPreview.src = profile.avatar_url;
+      photoPreview.style.display = "block";
+      photoFallback.hidden = true;
+    }
+    byId("profilePhotoInput")?.addEventListener("change", async event => {
+      const input = event.currentTarget, file = input.files?.[0];
+      if (!file) return;
+      const feedback = byId("profilePhotoFeedback");
+      feedback.className = "profile-feedback";
+      feedback.textContent = "Otimizando e enviando…";
+      try {
+        const optimized = await optimizeProfilePhoto(file);
+        const url = await window.conectaFirebase.uploadProfilePhoto(user, optimized);
+        photoPreview.src = url;
+        photoPreview.style.display = "block";
+        photoFallback.hidden = true;
+        feedback.classList.add("success");
+        feedback.textContent = "Foto de perfil atualizada.";
+      } catch (error) {
+        console.error("Profile photo update failed", error);
+        feedback.classList.add("error");
+        feedback.textContent = error?.message || "Não foi possível atualizar a foto.";
+      } finally { input.value = ""; }
+    });
+    const notificationButton = byId("browserNotificationToggle");
+    const notificationStatus = byId("browserNotificationStatus");
+    const refreshNotificationUi = () => {
+      const supported = "Notification" in window;
+      notificationButton.disabled = !supported;
+      notificationButton.textContent = browserNotificationsEnabled() ? "Desativar notificações" : "Ativar notificações no navegador";
+      notificationStatus.textContent = !supported
+        ? "Este navegador não oferece notificações."
+        : Notification.permission === "denied"
+          ? "As notificações estão bloqueadas nas configurações do navegador."
+          : browserNotificationsEnabled()
+            ? "Ativas para novas mensagens e lembretes próximos."
+            : "Os avisos dentro do aplicativo continuam ativos.";
+    };
+    refreshNotificationUi();
+    notificationButton?.addEventListener("click", async () => {
+      if (browserNotificationsEnabled()) {
+        try { localStorage.removeItem(notificationPrefsKey()); } catch {}
+        refreshNotificationUi();
+        return;
+      }
+      if (!("Notification" in window)) return;
+      const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
+      if (permission === "granted") {
+        try { localStorage.setItem(notificationPrefsKey(), "true"); } catch {}
+        refreshNotificationUi();
+        showToast("Notificações ativadas.");
+      } else notificationStatus.textContent = "Permissão não concedida. Confira as configurações do navegador.";
+    });
   };
 
   const baseRenderViewForProfile = renderView;
