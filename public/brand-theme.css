@@ -295,6 +295,12 @@ input:focus-visible, textarea:focus-visible, select:focus-visible {
 .tag.green, .role-badge { background: #e8eee7; color: #223e2a; }
 .tag.purple { background: #efeee8; color: #626960; }
 .count { background: #efeee8; color: #626960; }
+.person { background: #efeee8; color: #626960; }
+.person.green { background: #e8eee7; color: #223e2a; }
+.person.orange { background: #f4e6db; color: #a74e21; }
+.filter-pill.active { background: #e8eee7; border-color: #cbd8c9; color: #223e2a; }
+.conv-item:hover, .conv-item.active { background: #eff2eb; }
+.field input:focus, .field textarea:focus, .field select:focus { border-color: #be6731; }
 .chat-messages { background: #f5f4ee; }
 .chat-messages .bubble:not(.mine) { background: #fffdf9; border-color: #e5e4dc; color: #1d1d1b; }
 .chat-messages .bubble.mine { background: #e1eadf; border-color: #d3dfd0; color: #1d1d1b; }
