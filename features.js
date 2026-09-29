@@ -88,10 +88,10 @@
       if (!item?.id || (item.author_id !== uid && !admin) || card.querySelector(".record-actions")) return;
       const actions = document.createElement("div");
       actions.className = "record-actions";
-      if (item.author_id === uid) addButton(actions, "Editar", "record-action", () => {
+      if (item.author_id === uid || admin) addButton(actions, "Editar", "record-action", () => {
           openModal("notice");
           byId("modalTitle").textContent = "Editar aviso";
-          byId("modalDesc").textContent = "Altere o conteúdo do aviso criado por você.";
+          byId("modalDesc").textContent = "Altere o conteúdo e o setor deste aviso.";
           byId("title").value = item.title || "";
           const sector = String(item.sector || "Geral").toLowerCase();
           byId("sector").value = sector.includes("fiscal") ? "Fiscal" : sector.includes("contáb") || sector.includes("contab") ? "Contábil" : sector.includes("pessoal") ? "Departamento Pessoal" : "Geral";
@@ -125,10 +125,10 @@
       if (!item?.id || (item.owner_id !== uid && !admin) || row.querySelector(".record-actions")) return;
       const actions = document.createElement("div");
       actions.className = "record-actions";
-      if (item.owner_id === uid) addButton(actions, "Editar", "record-action", () => {
+      if (item.owner_id === uid || admin) addButton(actions, "Editar", "record-action", () => {
         openModal("reminder");
         byId("modalTitle").textContent = "Editar lembrete";
-        byId("modalDesc").textContent = "Altere o lembrete criado por você.";
+        byId("modalDesc").textContent = "Altere o título ou a data deste lembrete.";
         byId("title").value = item.title || "";
         if (item.due_at) {
           const due = new Date(item.due_at);
@@ -242,11 +242,13 @@
           renderConversations(undefined, false);
         });
       }
-      if (message.mine && !message.deletedAt) {
+      if ((message.mine || isActiveAdmin()) && !message.deletedAt) {
         menuAction("Editar mensagem", () => {
           openModal("message");
           byId("modalTitle").textContent = "Editar mensagem";
-          byId("modalDesc").textContent = "A mensagem editada será atualizada para todos.";
+          byId("modalDesc").textContent = message.mine
+            ? "A mensagem editada será atualizada para todos."
+            : "Como administrador, você pode editar esta mensagem para todos.";
           byId("destination")?.closest(".field")?.remove();
           byId("message").value = raw[index]?.text ?? message.text ?? "";
           byId("form").dataset.featureAction = "edit-message";
