@@ -6,8 +6,9 @@
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-app.js";
   import { getAnalytics, isSupported as analyticsSupported } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-analytics.js";
-  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
-  import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, setDoc, updateDoc, getDocs } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+  import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, sendPasswordResetEmail, signOut, createUserWithEmailAndPassword, updateProfile } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-auth.js";
+  import { getFirestore, collection, addDoc, query, where, onSnapshot, serverTimestamp, doc, setDoc, updateDoc, getDocs, getDoc } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-firestore.js";
+  import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/12.1.0/firebase-functions.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAT43RHboXxC6eiMeSWlgT3PC5NOAntmII",
@@ -21,11 +22,15 @@
 
   const firebaseApp = initializeApp(firebaseConfig);
   const auth = getAuth(firebaseApp);
+  const accountApp = initializeApp(firebaseConfig, "conecta-account-creation");
+  const accountAuth = getAuth(accountApp);
   const db = getFirestore(firebaseApp);
+  const functions = getFunctions(firebaseApp, "us-central1");
   const analytics = await analyticsSupported().then(ok => ok ? getAnalytics(firebaseApp) : null).catch(() => null);
   let stopDataSync = () => {};
   let stopConversationSync = () => {};
   let stopMessageSync = () => {};
+  let stopUsersSync = () => {};
   const channelSlug = name => "channel-" + name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "-");
   const ensureChannel = async (user, name) => {
     const id = channelSlug(name);
@@ -52,21 +57,41 @@
       const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
       window.dispatchEvent(new CustomEvent("conecta-conversations-sync", { detail: items }));
     });
-    stopDataSync = () => { stopNotices(); stopReminders(); stopConversations(); stopMessageSync(); };
+    stopUsersSync();
+    const stopUsers = onSnapshot(query(collection(db, "users")), snapshot => {
+      const items = snapshot.docs.map(item => ({ id: item.id, ...item.data() }));
+      window.dispatchEvent(new CustomEvent("conecta-users-sync", { detail: items }));
+    });
+    stopUsersSync = stopUsers;
+    stopDataSync = () => { stopNotices(); stopReminders(); stopConversations(); stopMessageSync(); stopUsersSync(); };
+  };
+  const ensureUserProfile = async user => {
+    const profileRef = doc(db, "users", user.uid);
+    const profileSnap = await getDoc(profileRef);
+    if (profileSnap.exists()) return profileSnap.data();
+    const bootstrap = await httpsCallable(functions, "bootstrapAdmin")();
+    if (bootstrap.data?.role === "admin") return { name: user.displayName || user.email?.split("@")[0] || "Administrador", email: user.email || "", role: "admin", sector: "Administração" };
+    return { name: user.displayName || user.email?.split("@")[0] || "Colaborador", email: user.email || "", role: "colaborador", sector: "Geral" };
   };
   window.conectaFirebase = {
-    app: firebaseApp, auth, db, analytics, config: firebaseConfig,
+    app: firebaseApp, auth, db, analytics, functions, config: firebaseConfig,
     signInWithEmailAndPassword, sendPasswordResetEmail, signOut,
-    startDataSync,
+    startDataSync, ensureUserProfile,
+    createUser: (admin, data) => httpsCallable(functions, "createUser")(data),
     addNotice: (user, data) => addDoc(collection(db, "notices"), { ...data, authorId: user.uid, createdAt: serverTimestamp() }),
     addReminder: (user, data) => addDoc(collection(db, "reminders"), { ...data, ownerId: user.uid, createdAt: serverTimestamp() }),
     ensureChannel, watchMessages, sendMessage
   };
-  onAuthStateChanged(auth, user => {
+  onAuthStateChanged(auth, async user => {
     document.querySelector("#authScreen")?.classList.toggle("visible", !user);
     document.querySelector(".app")?.classList.toggle("authenticated", !!user);
     document.querySelector("#authLoading")?.classList.remove("visible");
-    if (user) startDataSync(user); else stopDataSync();
+    if (user) {
+      const profile = await ensureUserProfile(user).catch(() => ({ role: "colaborador", name: user.displayName || "Colaborador" }));
+      window.conectaCurrentProfile = profile;
+      document.dispatchEvent(new CustomEvent("conecta-profile-ready", { detail: profile }));
+      startDataSync(user);
+    } else { window.conectaCurrentProfile = null; stopDataSync(); }
     if (user) {
       const label = user.displayName || user.email?.split("@")[0] || "Colaborador";
       const name = document.querySelector("#currentUserName");
@@ -88,6 +113,7 @@
 .app{display:none}.app.authenticated{display:grid}.auth-screen{display:none;min-height:100vh;align-items:center;justify-content:center;padding:24px;background:radial-gradient(circle at 15% 10%,#efedff 0,transparent 35%),var(--bg)}.auth-screen.visible{display:flex}.auth-card{width:min(420px,100%);background:#fff;border:1px solid var(--line);border-radius:22px;padding:30px;box-shadow:0 25px 70px #26325b14}.auth-brand{display:flex;align-items:center;gap:11px;font-size:20px;font-weight:750;margin-bottom:28px}.auth-card h1{font-size:24px;letter-spacing:-.5px;margin:0 0 7px}.auth-card>p{color:var(--muted);font-size:13px;line-height:1.5;margin:0 0 22px}.auth-card .field{margin:14px 0}.auth-submit{width:100%;margin-top:6px}.auth-link{display:block;margin:17px auto 0;border:0;background:none;color:var(--purple);font-size:12px;text-align:center}.auth-error{display:none;border-radius:9px;padding:10px 12px;background:#fff0ef;color:#c16058;font-size:12px;margin:12px 0}.auth-error.visible{display:block}.auth-loading{display:none;color:var(--muted);font-size:12px;margin:12px 0}.auth-loading.visible{display:block}
 
 .view-panel{display:none}.view-panel.show{display:block}.view-toolbar{display:flex;justify-content:space-between;align-items:center;margin:4px 0 18px}.view-toolbar h2{font-size:20px;margin:0}.view-toolbar p{color:var(--muted);font-size:12px;margin:5px 0 0}.filter-row{display:flex;gap:8px;flex-wrap:wrap}.filter-pill{border:1px solid var(--line);background:#fff;color:#747b90;border-radius:20px;padding:8px 12px;font-size:11px}.filter-pill.active{background:var(--purple-light);border-color:#dedaff;color:var(--purple);font-weight:650}.conversation-layout{display:grid;grid-template-columns:280px 1fr;min-height:480px}.conversation-list{border-right:1px solid var(--line);padding:10px}.conv-item{border:0;background:#fff;width:100%;text-align:left;display:flex;gap:10px;padding:12px;border-radius:11px}.conv-item:hover,.conv-item.active{background:#f5f4ff}.conv-item .chat-snippet{max-width:145px}.conversation-chat{display:flex;flex-direction:column}.chat-head{padding:17px 20px;border-bottom:1px solid var(--line);font-weight:700}.chat-head small{display:block;color:var(--muted);font-size:11px;font-weight:400;margin-top:4px}.chat-messages{padding:20px;display:flex;flex-direction:column;gap:12px;flex:1;background:#fbfbfd}.bubble{max-width:72%;padding:10px 13px;border-radius:13px 13px 13px 4px;background:white;border:1px solid var(--line);font-size:12px;line-height:1.45}.bubble.mine{align-self:flex-end;background:var(--purple);border-color:var(--purple);color:white;border-radius:13px 13px 4px 13px}.bubble small{display:block;font-size:9px;opacity:.65;margin-top:5px}.composer{display:flex;gap:8px;padding:13px;border-top:1px solid var(--line)}.composer input{flex:1;border:1px solid var(--line);border-radius:10px;padding:10px 12px;outline:none}.notice-list{display:grid;gap:12px}.notice-card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:17px 19px;box-shadow:var(--shadow)}.notice-card h3{font-size:14px;margin:0 0 5px}.notice-card p{font-size:12px;color:#70778d;line-height:1.55;margin:8px 0}.notice-card .post-meta{display:flex;justify-content:space-between}.empty{padding:50px;text-align:center;color:var(--muted);font-size:13px}.back-dashboard{display:none;margin-bottom:16px;border:0;background:none;color:var(--purple);font-size:12px;font-weight:650;padding:0}.back-dashboard.show{display:block}@media(max-width:760px){.conversation-layout{grid-template-columns:1fr}.conversation-list{border-right:0;border-bottom:1px solid var(--line);display:flex;overflow:auto}.conv-item{min-width:190px}.chat-messages{min-height:260px}}
+ .admin-nav{display:none}.admin-nav.visible{display:flex}.user-table{width:100%;border-collapse:collapse;font-size:12px}.user-table th,.user-table td{padding:12px 14px;text-align:left;border-bottom:1px solid var(--line)}.user-table th{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.5px}.role-badge{display:inline-block;border-radius:20px;padding:4px 8px;background:var(--purple-light);color:var(--purple);font-size:10px;font-weight:650}.admin-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:4px 15px;padding:18px 20px}.admin-form .field{margin:7px 0}.admin-form .full{grid-column:1/-1}.admin-actions{display:flex;justify-content:flex-end;padding:0 20px 20px}@media(max-width:760px){.admin-form{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -98,7 +124,7 @@
     <p>Use seu e-mail corporativo para acessar a comunicação interna da Tríade.</p>
     <div class="auth-error" id="authError"></div>
     <div class="auth-loading visible" id="authLoading">Verificando sessão...</div>
-    <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="email" required placeholder="seu.nome@triade.cnt.br"></div>
+    <div class="field"><label for="authEmail">E-mail</label><input id="authEmail" type="email" autocomplete="email" required placeholder="seu.nome@triadecontabilidade.com.br"></div>
     <div class="field"><label for="authPassword">Senha</label><input id="authPassword" type="password" autocomplete="current-password" required placeholder="Digite sua senha"></div>
     <button class="primary auth-submit" type="submit">Entrar</button>
     <button class="auth-link" type="button" id="resetPassword">Esqueci minha senha</button>
@@ -109,7 +135,7 @@
 <div class="brand"><div class="logo">✳</div> conecta</div>
 <div class="workspace"><div class="workspace-mark">T</div><div><b>Tríade Contabilidade</b><small>Espaço do escritório</small></div><span class="more">⌄</span></div>
 <div class="nav-label">Principal</div>
-<nav class="nav"><button class="active" data-view="Visão geral"><span class="ico">⌂</span> Visão geral</button><button data-view="Conversas"><span class="ico">▤</span> Conversas <span class="count">4</span></button><button data-view="Quadro de avisos"><span class="ico">▧</span> Quadro de avisos</button><button data-view="Lembretes"><span class="ico">◷</span> Lembretes <span class="count">3</span></button></nav>
+<nav class="nav"><button class="active" data-view="Visão geral"><span class="ico">⌂</span> Visão geral</button><button data-view="Conversas"><span class="ico">▤</span> Conversas <span class="count">0</span></button><button data-view="Quadro de avisos"><span class="ico">▧</span> Quadro de avisos</button><button data-view="Lembretes"><span class="ico">◷</span> Lembretes <span class="count">0</span></button><button class="admin-nav" id="adminNav" data-view="Administração"><span class="ico">⚙</span> Administração</button></nav>
 <div class="nav-label">Canais da equipe</div>
 <div class="channels"><button class="channel" data-view="Geral"><span class="dot"></span> Geral</button><button class="channel" data-view="Fiscal"><span class="dot"></span> Fiscal</button><button class="channel" data-view="Contábil"><span class="dot"></span> Contábil</button><button class="channel" data-view="Departamento Pessoal"><span class="dot"></span> Departamento Pessoal</button><button class="channel" data-view="Atendimento"><span class="dot"></span> Atendimento</button></div>
 <div class="profile"><div class="avatar" id="currentUserInitials">CO</div><div class="profile-info"><span id="currentUserName">Colaborador</span><small>Usuário autenticado</small></div><button class="text-btn" id="logoutBtn" type="button">Sair</button></div>
@@ -153,5 +179,7 @@ window.addEventListener("conecta-conversations-sync",e=>{contacts=e.detail.filte
 window.addEventListener("conecta-messages-sync",e=>{const c=contacts.find(x=>x.firestoreId===e.detail.conversationId);if(!c)return;c.messages=e.detail.messages.map(m=>({text:m.text,time:syncDate(m.createdAt)||"Agora",mine:m.authorId===window.conectaFirebase?.auth.currentUser?.uid}));c.snippet=c.messages.at(-1)?.text||"Nenhuma mensagem ainda";renderConversations(undefined,false)})
 function bindFirebaseAuth(){const fb=window.conectaFirebase;if(!fb)return;$("#authForm").onsubmit=async e=>{e.preventDefault();$("#authError").classList.remove("visible");try{await fb.signInWithEmailAndPassword(fb.auth,$("#authEmail").value.trim(),$("#authPassword").value);showToast("Login realizado")}catch(err){authMessage("Não foi possível entrar. Confira o e-mail e a senha.")}};$("#resetPassword").onclick=async()=>{const email=$("#authEmail").value.trim();if(!email){authMessage("Informe seu e-mail para redefinir a senha.");return}try{await fb.sendPasswordResetEmail(fb.auth,email);authMessage("Enviamos as instruções para o seu e-mail.")}catch(err){authMessage("Não foi possível enviar a redefinição para este e-mail.")}};$("#logoutBtn").onclick=()=>fb.signOut(fb.auth)}
 window.addEventListener("conecta-firebase-ready",bindFirebaseAuth);if(window.conectaFirebase)bindFirebaseAuth();
+function escapeHtml(value){return String(value).replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[c]))}
+function renderAdmin(){const fb=window.conectaFirebase,user=fb?.auth.currentUser;if(!user||window.conectaCurrentProfile?.role!=="admin"){showToast("Acesso restrito aos administradores");showDashboard();return}const users=window.conectaUsers||[];const labels={admin:"Administrador",fiscal:"Dpto. Fiscal",contabil:"Dpto. Contábil",pessoal:"Dpto. Pessoal",colaborador:"Colaborador"};$("#viewPanel").innerHTML='<div class="view-toolbar"><div><h2>Administração</h2><p>Cadastre colaboradores e defina o departamento de acesso.</p></div></div><div class="card" style="margin-bottom:18px"><div class="card-head"><div><div class="card-title">Novo usuário</div><div class="card-sub">A conta será criada no Firebase Authentication.</div></div></div><form class="admin-form" id="userForm"><div class="field"><label for="userName">Nome completo</label><input id="userName" required placeholder="Nome do colaborador"></div><div class="field"><label for="userEmail">E-mail corporativo</label><input id="userEmail" type="email" required placeholder="nome@empresa.com.br"></div><div class="field"><label for="userPassword">Senha inicial</label><input id="userPassword" type="password" minlength="6" required placeholder="Mínimo de 6 caracteres"></div><div class="field"><label for="userRole">Role / departamento</label><select id="userRole"><option value="fiscal">Dpto. Fiscal</option><option value="contabil">Dpto. Contábil</option><option value="pessoal">Dpto. Pessoal</option><option value="admin">Administrador</option></select></div><div class="admin-actions full"><button class="primary" type="submit">＋ Cadastrar usuário</button></div></form></div><div class="card"><div class="card-head"><div><div class="card-title">Usuários cadastrados</div><div class="card-sub">Perfis registrados no Conecta.</div></div></div>'+(users.length?'<div style="overflow:auto"><table class="user-table"><thead><tr><th>Nome</th><th>E-mail</th><th>Departamento</th><th>Status</th></tr></thead><tbody>'+users.map(x=>'<tr><td>'+escapeHtml(x.name||"—")+'</td><td>'+escapeHtml(x.email||"—")+'</td><td><span class="role-badge">'+(labels[x.role]||x.role||"Colaborador")+'</span></td><td>'+((x.active===false)?"Inativo":"Ativo")+'</td></tr>').join("")+'</tbody></table></div>':'<div class="empty">Nenhum usuário cadastrado ainda.</div>')+'</div>';$("#userForm").onsubmit=async e=>{e.preventDefault();const data={name:$("#userName").value.trim(),email:$("#userEmail").value.trim().toLowerCase(),password:$("#userPassword").value,role:$("#userRole").value,sector:labels[$("#userRole").value]};try{await fb.createUser(user,data);showToast("Usuário cadastrado com sucesso");e.target.reset()}catch(err){showToast(err.code==="auth/email-already-in-use"?"Este e-mail já está cadastrado":"Não foi possível cadastrar o usuário")}}}
+window.addEventListener("conecta-users-sync",e=>{window.conectaUsers=e.detail;if($("#viewPanel")?.classList.contains("show")&&$("#crumb")?.textContent==="Administração")renderAdmin()});document.addEventListener("conecta-profile-ready",e=>{const admin=e.detail?.role==="admin";$("#adminNav")?.classList.toggle("visible",admin);if($("#currentUserName"))$("#currentUserName").textContent=e.detail?.name||$("#currentUserName").textContent});$("#adminNav").onclick=()=>{document.querySelectorAll(".nav button,.channel").forEach(x=>x.classList.remove("active"));$("#adminNav").classList.add("active");document.querySelector(".welcome").style.display="none";document.querySelector(".stats").style.display="none";document.querySelector(".grid").style.display="none";$("#viewPanel").classList.add("show");$("#backDashboard").classList.add("show");$("#crumb").textContent="Administração";renderAdmin()};
 </script></body></html>
-
