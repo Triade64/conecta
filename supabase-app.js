@@ -36,7 +36,7 @@ async function loadData(user) {
     const otherId = x.kind === "direct" ? (x.created_by === user.id ? x.direct_recipient_id : x.created_by) : null;
     const other = otherId ? people.get(otherId) : null;
     return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", kind: x.kind, lastMessage: x.last_message };
-  })));
+  }));
   if ((await ensureUserProfile(user)).role === "admin") dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
 }
 
