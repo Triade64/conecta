@@ -23,18 +23,27 @@ async function ensureUserProfile(user) {
   return profile || { name: user.user_metadata?.name || user.email?.split("@")[0] || "Colaborador", email: user.email || "", role: "colaborador", sector: "Geral" };
 }
 
+async function withGlobalAnnouncementImages(rows = []) {
+  return Promise.all(rows.map(async row => {
+    if (!row.image_path) return { ...row, image_url: "" };
+    const { data, error } = await supabase.storage.from("global-announcements").createSignedUrl(row.image_path, 12 * 60 * 60);
+    if (error) console.error("Could not sign global announcement image", error);
+    return { ...row, image_url: data?.signedUrl || "" };
+  }));
+}
+
 async function loadData(user) {
   const profile = await ensureUserProfile(user);
   // Reminders are private to their creator, including for administrator accounts.
   const remindersQuery = supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false });
-  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }, { data: announcement }] = await Promise.all([
+  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }, { data: announcements }] = await Promise.all([
     supabase.from("notices").select("*").order("created_at", { ascending: false }),
     remindersQuery,
     supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
     supabase.from("profiles").select("*").order("name"),
     supabase.rpc("list_team_directory"),
     supabase.rpc("get_unread_counts"),
-    supabase.from("global_announcements").select("singleton,title,body,is_active,updated_at").eq("singleton", true).maybeSingle()
+    supabase.from("global_announcements").select("*").order("starts_at", { ascending: true })
   ]);
   const colleagues = directory || [];
   const people = new Map(colleagues.map(person => [person.id, person]));
@@ -48,7 +57,9 @@ async function loadData(user) {
     return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", unreadCount: unreadCounts.get(x.id) || 0, kind: x.kind, lastMessage: x.last_message };
   }));
   dispatch("conecta-unread-sync", Object.fromEntries(unreadCounts));
-  dispatch("conecta-global-announcement-sync", announcement || null);
+  const now = Date.now();
+  const currentAnnouncements = (announcements || []).filter(item => item.is_active && new Date(item.starts_at).getTime() <= now && (!item.ends_at || new Date(item.ends_at).getTime() > now));
+  dispatch("conecta-global-announcement-sync", await withGlobalAnnouncementImages(currentAnnouncements));
   if (profile.role === "admin" && profile.active === true) dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
 }
 
@@ -56,6 +67,7 @@ function startDataSync(user) {
   stopDataSync();
   loadData(user);
   const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "global_announcements" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).subscribe();
+  const announcementScheduleTimer = window.setInterval(() => loadData(user), 60_000);
   const liveChannel = supabase.channel("conecta-presence", { config: { private: true, presence: { key: user.id } } })
     .on("presence", { event: "sync" }, () => {
       dispatch("conecta-online-count-sync", Object.keys(liveChannel.presenceState()).length);
@@ -68,6 +80,7 @@ function startDataSync(user) {
     });
   presenceChannel = liveChannel;
   stopDataSync = () => {
+    window.clearInterval(announcementScheduleTimer);
     supabase.removeChannel(channel);
     if (presenceChannel === liveChannel) presenceChannel = null;
     supabase.removeChannel(liveChannel);
@@ -139,14 +152,45 @@ window.conectaFirebase = {
     if (result.user) { const { error: profileError } = await supabase.from("profiles").upsert({ id: result.user.id, name: data.name, email: data.email, role: data.role, sector: data.sector, active: true }); if (profileError) throw profileError; }
     return result.user;
   },
+  listGlobalAnnouncements: async () => {
+    const { data, error } = await supabase.from("global_announcements").select("*").order("starts_at", { ascending: false });
+    if (error) throw error;
+    return withGlobalAnnouncementImages(data || []);
+  },
   saveGlobalAnnouncement: async (user, data) => {
-    const { error } = await supabase.from("global_announcements").upsert({ singleton: true, title: data.title, body: data.body, is_active: true, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "singleton" });
+    const id = data.id || crypto.randomUUID();
+    const { data: oldRow, error: oldError } = await supabase.from("global_announcements").select("image_path").eq("id", id).maybeSingle();
+    if (oldError) throw oldError;
+    let imagePath = data.removeImage ? null : (oldRow?.image_path || null);
+    let uploadedPath = null;
+    if (data.imageFile) {
+      const extensions = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
+      if (!extensions[data.imageFile.type] || data.imageFile.size > 5 * 1024 * 1024) throw new Error("Use uma imagem JPG, PNG ou WEBP de até 5 MB.");
+      uploadedPath = `${id}/${crypto.randomUUID()}.${extensions[data.imageFile.type]}`;
+      const { error: uploadError } = await supabase.storage.from("global-announcements").upload(uploadedPath, data.imageFile, { contentType: data.imageFile.type, cacheControl: "3600", upsert: false });
+      if (uploadError) throw uploadError;
+      imagePath = uploadedPath;
+    }
+    const record = { id, title: data.title, body: data.body, is_active: data.is_active !== false, starts_at: data.starts_at, ends_at: data.ends_at || null, image_path: imagePath, updated_by: user.id, updated_at: new Date().toISOString() };
+    const { error } = await supabase.from("global_announcements").upsert(record, { onConflict: "id" });
+    if (error) {
+      if (uploadedPath) await supabase.storage.from("global-announcements").remove([uploadedPath]);
+      throw error;
+    }
+    if (oldRow?.image_path && oldRow.image_path !== imagePath) await supabase.storage.from("global-announcements").remove([oldRow.image_path]);
+    await loadData(user);
+  },
+  setGlobalAnnouncementActive: async (user, id, isActive) => {
+    const { error } = await supabase.from("global_announcements").update({ is_active: isActive, updated_by: user.id, updated_at: new Date().toISOString() }).eq("id", id);
     if (error) throw error;
     await loadData(user);
   },
-  deactivateGlobalAnnouncement: async user => {
-    const { error } = await supabase.from("global_announcements").update({ is_active: false, updated_by: user.id, updated_at: new Date().toISOString() }).eq("singleton", true);
+  deleteGlobalAnnouncement: async (user, id) => {
+    const { data: record, error: readError } = await supabase.from("global_announcements").select("image_path").eq("id", id).maybeSingle();
+    if (readError) throw readError;
+    const { error } = await supabase.from("global_announcements").delete().eq("id", id);
     if (error) throw error;
+    if (record?.image_path) await supabase.storage.from("global-announcements").remove([record.image_path]);
     await loadData(user);
   },
   addNotice: async (user, data) => { const { error } = await supabase.from("notices").insert({ title: data.title, sector: data.sector, tag: data.tag || "NOVO", body: data.text, author_id: user.id }); if (error) throw error; },
