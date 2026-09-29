@@ -24,6 +24,10 @@ firebase deploy --only hosting
 
 O projeto já está associado ao Firebase `triadechat`. O frontend inicializa Firebase App, Analytics, Authentication e Firestore. As regras iniciais do Firestore permitem acesso somente a usuários autenticados; as permissões por setor serão refinadas junto com o login.
 
+## Publicação automática pelo GitHub
+
+O workflow `.github/workflows/firebase-hosting.yml` publica automaticamente cada alteração enviada para a branch `main`. Para ativá-lo, cadastre no repositório o Secret `FIREBASE_SERVICE_ACCOUNT_TRIADECHAT` com o JSON de uma conta de serviço do projeto Firebase. Depois disso, cada push atualizará o endereço `triadechat.web.app`.
+
 ## Como abrir
 
 Abra `index.html` no navegador. Não há dependências obrigatórias para executar a versão atual.
