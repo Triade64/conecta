@@ -125,7 +125,16 @@ window.conectaFirebase = {
   updateNotice: async (id, data) => { const { error } = await supabase.from("notices").update({ title: data.title, body: data.text, sector: data.sector }).eq("id", id); if (error) throw error; },
   deleteNotice: async id => { const { data, error } = await supabase.from("notices").delete().eq("id", id).select("id").maybeSingle(); if (error) throw error; if (!data) throw new Error("O aviso não pode ser excluído."); },
   addReminder: async (user, data) => { const { error } = await supabase.from("reminders").insert({ title: data.title, due_at: data.due_at || new Date().toISOString(), done: !!data.done, owner_id: user.id }); if (error) throw error; },
-  updateReminder: async (id, data) => { const { error } = await supabase.from("reminders").update({ title: data.title, due_at: data.due_at }).eq("id", id); if (error) throw error; },
+  updateReminder: async (id, data) => {
+    const changes = {};
+    if (Object.hasOwn(data, "title")) changes.title = data.title;
+    if (Object.hasOwn(data, "due_at")) changes.due_at = data.due_at;
+    if (Object.hasOwn(data, "done")) changes.done = !!data.done;
+    if (!Object.keys(changes).length) return;
+    const { data: updated, error } = await supabase.from("reminders").update(changes).eq("id", id).select("id").maybeSingle();
+    if (error) throw error;
+    if (!updated) throw new Error("O lembrete não foi atualizado. Verifique se ainda está ativo e se você tem acesso a ele.");
+  },
   deleteReminder: async id => { const { data, error } = await supabase.from("reminders").delete().eq("id", id).select("id").maybeSingle(); if (error) throw error; if (!data) throw new Error("O lembrete não pode ser excluído."); },
   editMessage: async (id, text) => {
     const { data: previous, error: readError } = await supabase.from("messages").select("conversation_id,text").eq("id", id).maybeSingle();
