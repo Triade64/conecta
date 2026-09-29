@@ -121,6 +121,13 @@
 .channels:not(.role-ready) .channel:not([data-view="Geral"]){display:none}
 .chat-messages .bubble:not(.mine){align-self:flex-start;background:var(--sender-color,#eef2f7);border-color:transparent;color:#263342;border-radius:13px 13px 13px 4px}.chat-messages .bubble.mine{background:#d9fdd3;border-color:#c9edc2;color:#1f3527;border-radius:13px 13px 4px 13px}.chat-messages .bubble{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}.message-row{display:flex;align-items:flex-end;gap:8px}.message-row.mine{justify-content:flex-end}.message-stack{display:flex;flex-direction:column;gap:3px;max-width:calc(100% - 36px)}.message-row.mine .message-stack{align-items:flex-end}.message-author{font-size:10px;color:#727b8b;padding:0 5px}.message-avatar{display:grid;place-items:center;flex:0 0 28px;width:28px;height:28px;margin-bottom:3px;border-radius:50%;font-weight:700;font-size:9px;color:#38445a;border:1px solid #dfe5ee}
 </style>
+<style>
+.conversation-layout{height:540px;min-height:0;grid-template-rows:minmax(0,1fr)}
+.conversation-chat{min-height:0;height:100%}
+.chat-messages{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable}
+.message-row{flex:0 0 auto}
+@media(max-width:760px){.conversation-layout{height:min(72vh,640px);grid-template-rows:auto minmax(0,1fr)}.conversation-chat{height:auto}.conversation-chat .chat-messages{min-height:0}}
+</style>
 </head>
 <body>
 <section class="auth-screen visible" id="authScreen">
