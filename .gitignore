@@ -2,5 +2,7 @@
 .env
 .env.*
 node_modules/
+.env
+.env.local
+.vercel
 .sites-runtime/
-
