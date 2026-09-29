@@ -1,6 +1,7 @@
 (() => {
   const currentUserId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.uid || null;
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
+  const isActiveAdmin = () => window.conectaCurrentProfile?.role === "admin" && window.conectaCurrentProfile?.active === true;
   const byId = id => document.getElementById(id);
   const unreadStyle = document.createElement("style");
   unreadStyle.textContent = ".conversation-list .chat-name{display:flex;align-items:center;justify-content:space-between;gap:8px}.conversation-list .unread-badge{display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;min-width:21px;height:21px;padding:0 6px;border-radius:999px;background:#223e2a;color:#fff;font-size:11px;font-weight:700;line-height:1}.conversation-list .unread-badge[hidden]{display:none}";
@@ -79,24 +80,25 @@
   renderNotices = window.renderNotices = () => {
     baseRenderNotices();
     const uid = currentUserId();
+    const admin = isActiveAdmin();
     const filter = byId("noticeFilter")?.value || "Todos";
     const visible = filter === "Todos" ? notices : notices.filter(item => item.sector === filter);
     document.querySelectorAll(".notice-card").forEach((card, index) => {
       const item = visible[index];
-      if (!item?.id || item.author_id !== uid || card.querySelector(".record-actions")) return;
+      if (!item?.id || (item.author_id !== uid && !admin) || card.querySelector(".record-actions")) return;
       const actions = document.createElement("div");
       actions.className = "record-actions";
-      addButton(actions, "Editar", "record-action", () => {
-        openModal("notice");
-        byId("modalTitle").textContent = "Editar aviso";
-        byId("modalDesc").textContent = "Altere o conteúdo do aviso criado por você.";
-        byId("title").value = item.title || "";
-        const sector = String(item.sector || "Geral").toLowerCase();
-        byId("sector").value = sector.includes("fiscal") ? "Fiscal" : sector.includes("contáb") || sector.includes("contab") ? "Contábil" : sector.includes("pessoal") ? "Departamento Pessoal" : "Geral";
-        byId("message").value = item.body || item.text || "";
-        byId("form").dataset.featureAction = "edit-notice";
-        byId("form").dataset.recordId = item.id;
-      });
+      if (item.author_id === uid) addButton(actions, "Editar", "record-action", () => {
+          openModal("notice");
+          byId("modalTitle").textContent = "Editar aviso";
+          byId("modalDesc").textContent = "Altere o conteúdo do aviso criado por você.";
+          byId("title").value = item.title || "";
+          const sector = String(item.sector || "Geral").toLowerCase();
+          byId("sector").value = sector.includes("fiscal") ? "Fiscal" : sector.includes("contáb") || sector.includes("contab") ? "Contábil" : sector.includes("pessoal") ? "Departamento Pessoal" : "Geral";
+          byId("message").value = item.body || item.text || "";
+          byId("form").dataset.featureAction = "edit-notice";
+          byId("form").dataset.recordId = item.id;
+        });
       addButton(actions, "Excluir", "record-action danger", async () => {
         if (!confirm("Excluir este aviso para todos que podem visualizá-lo?")) return;
         try {
@@ -114,15 +116,16 @@
   renderReminders = window.renderReminders = () => {
     baseRenderReminders();
     const uid = currentUserId();
+    const admin = isActiveAdmin();
     document.querySelectorAll("#reminders .reminder, #fullReminders .reminder").forEach((row, index) => {
       const box = row.closest("#fullReminders") ? byId("fullReminders") : byId("reminders");
       if (box?.id === "fullReminders") row.querySelector(".record-actions")?.remove();
       const listIndex = [...box.querySelectorAll(".reminder")].indexOf(row);
       const item = reminders[listIndex];
-      if (!item?.id || item.owner_id !== uid || row.querySelector(".record-actions")) return;
+      if (!item?.id || (item.owner_id !== uid && !admin) || row.querySelector(".record-actions")) return;
       const actions = document.createElement("div");
       actions.className = "record-actions";
-      addButton(actions, "Editar", "record-action", () => {
+      if (item.owner_id === uid) addButton(actions, "Editar", "record-action", () => {
         openModal("reminder");
         byId("modalTitle").textContent = "Editar lembrete";
         byId("modalDesc").textContent = "Altere o lembrete criado por você.";
@@ -250,12 +253,12 @@
           byId("form").dataset.recordId = message.id;
           menu.hidden = true;
         });
-        menuAction("Apagar para todos", async () => {
-          if (!confirm("Apagar esta mensagem para todos os participantes?")) return;
-          await window.conectaFirebase.deleteMessageForEveryone(message.id);
-          await refreshMessages(conversation);
-        }, true);
       }
+      if ((message.mine || isActiveAdmin()) && !message.deletedAt) menuAction("Apagar para todos", async () => {
+        if (!confirm("Apagar esta mensagem para todos os participantes?")) return;
+        await window.conectaFirebase.deleteMessageForEveryone(message.id);
+        await refreshMessages(conversation);
+      }, true);
       menuAction("Apagar para mim", async () => {
         await window.conectaFirebase.deleteMessageForMe(message.id, currentUser());
         await refreshMessages(conversation);
