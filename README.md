@@ -7,9 +7,9 @@ Base inicial da aplicação interna do escritório, com foco em comunicação r�
 - `index.html`: aplicação navegável e responsiva.
 - `data/seed.json`: estrutura de setores e permissões, sem usuários fictícios.
 - `docs/architecture.md`: arquitetura funcional e plano de evolução.
-- Avisos e lembretes sincronizados em tempo real pelo Firestore para usuários autenticados.
+- Avisos, lembretes, canais e mensagens sincronizados em tempo real pelo Firestore para usuários autenticados.
 
-Conversas ainda estão em fase local; avisos e lembretes já usam o Firestore quando o usuário está autenticado e mantêm fallback local quando a conexão não está disponível.
+Conversas por setor criam seus canais no Firestore quando são acessadas pela primeira vez. Mensagens novas são gravadas na subcoleção do canal e carregadas em tempo real.
 
 ## Firebase Hosting
 
