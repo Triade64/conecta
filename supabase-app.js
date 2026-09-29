@@ -8,6 +8,8 @@ let stopDataSync = () => {};
 let stopMessageSync = () => {};
 let activeMessageChannel = null;
 let messageWatchGeneration = 0;
+let presenceChannel = null;
+let activeAuthUserId = null;
 
 const dispatch = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
 const normalize = (row, extra = {}) => ({ id: row.id, ...row, ...extra });
@@ -25,13 +27,14 @@ async function loadData(user) {
   const profile = await ensureUserProfile(user);
   // Reminders are private to their creator, including for administrator accounts.
   const remindersQuery = supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false });
-  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }] = await Promise.all([
+  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }, { data: announcement }] = await Promise.all([
     supabase.from("notices").select("*").order("created_at", { ascending: false }),
     remindersQuery,
     supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
     supabase.from("profiles").select("*").order("name"),
     supabase.rpc("list_team_directory"),
-    supabase.rpc("get_unread_counts")
+    supabase.rpc("get_unread_counts"),
+    supabase.from("global_announcements").select("singleton,title,body,is_active,updated_at").eq("singleton", true).maybeSingle()
   ]);
   const colleagues = directory || [];
   const people = new Map(colleagues.map(person => [person.id, person]));
@@ -45,15 +48,33 @@ async function loadData(user) {
     return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", unreadCount: unreadCounts.get(x.id) || 0, kind: x.kind, lastMessage: x.last_message };
   }));
   dispatch("conecta-unread-sync", Object.fromEntries(unreadCounts));
+  dispatch("conecta-global-announcement-sync", announcement || null);
   if (profile.role === "admin" && profile.active === true) dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
 }
 
 function startDataSync(user) {
   stopDataSync();
   loadData(user);
-  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).subscribe();
+  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "global_announcements" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).subscribe();
+  const liveUsers = new Set();
+  const liveChannel = supabase.channel("conecta-presence", { config: { private: true, presence: { key: user.id } } })
+    .on("presence", { event: "sync" }, () => {
+      liveUsers.clear();
+      Object.values(liveChannel.presenceState()).flat().forEach(session => { if (session.userId) liveUsers.add(session.userId); });
+      dispatch("conecta-online-count-sync", liveUsers.size);
+    })
+    .subscribe(async status => {
+      if (status === "SUBSCRIBED") {
+        const { error } = await liveChannel.track({ userId: user.id });
+        if (error) console.error("Could not publish team presence", error);
+      }
+    });
+  presenceChannel = liveChannel;
   stopDataSync = () => {
     supabase.removeChannel(channel);
+    if (presenceChannel === liveChannel) presenceChannel = null;
+    supabase.removeChannel(liveChannel);
+    dispatch("conecta-online-count-sync", 0);
     messageWatchGeneration++;
     const messageChannel = activeMessageChannel;
     activeMessageChannel = null;
@@ -121,6 +142,16 @@ window.conectaFirebase = {
     if (result.user) { const { error: profileError } = await supabase.from("profiles").upsert({ id: result.user.id, name: data.name, email: data.email, role: data.role, sector: data.sector, active: true }); if (profileError) throw profileError; }
     return result.user;
   },
+  saveGlobalAnnouncement: async (user, data) => {
+    const { error } = await supabase.from("global_announcements").upsert({ singleton: true, title: data.title, body: data.body, is_active: true, updated_by: user.id, updated_at: new Date().toISOString() }, { onConflict: "singleton" });
+    if (error) throw error;
+    await loadData(user);
+  },
+  deactivateGlobalAnnouncement: async user => {
+    const { error } = await supabase.from("global_announcements").update({ is_active: false, updated_by: user.id, updated_at: new Date().toISOString() }).eq("singleton", true);
+    if (error) throw error;
+    await loadData(user);
+  },
   addNotice: async (user, data) => { const { error } = await supabase.from("notices").insert({ title: data.title, sector: data.sector, tag: data.tag || "NOVO", body: data.text, author_id: user.id }); if (error) throw error; },
   updateNotice: async (id, data) => { const { error } = await supabase.from("notices").update({ title: data.title, body: data.text, sector: data.sector }).eq("id", id); if (error) throw error; },
   deleteNotice: async id => { const { data, error } = await supabase.from("notices").delete().eq("id", id).select("id").maybeSingle(); if (error) throw error; if (!data) throw new Error("O aviso não pode ser excluído."); },
@@ -180,6 +211,8 @@ window.conectaFirebase = {
 
 supabase.auth.onAuthStateChange(async (_event, session) => {
   const user = session?.user;
+  if (activeAuthUserId !== (user?.id || null)) dispatch("conecta-auth-session-reset");
+  activeAuthUserId = user?.id || null;
   window.conectaCurrentUser = user || null;
   document.querySelector("#authScreen")?.classList.toggle("visible", !user);
   document.querySelector(".app")?.classList.toggle("authenticated", !!user);
