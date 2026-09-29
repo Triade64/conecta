@@ -12,9 +12,9 @@ const normalize = (row, extra = {}) => ({ id: row.id, ...row, ...extra });
 const syncDate = value => value ? new Date(value).toLocaleDateString("pt-BR") + " · " + new Date(value).toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" }) : "";
 
 async function ensureUserProfile(user) {
+  await supabase.rpc("bootstrap_first_admin");
   let { data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle();
   if (!profile) {
-    await supabase.rpc("bootstrap_first_admin");
     ({ data: profile } = await supabase.from("profiles").select("*").eq("id", user.id).maybeSingle());
   }
   return profile || { name: user.user_metadata?.name || user.email?.split("@")[0] || "Colaborador", email: user.email || "", role: "colaborador", sector: "Geral" };
