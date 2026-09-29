@@ -550,7 +550,9 @@
   window.addEventListener("conecta-global-announcement-sync", event => {
     const announcement = event.detail;
     latestAnnouncement = announcement;
-    if (!announcement?.is_active || !announcement.updated_at) return;
+    if (announcement && byId("globalAnnouncementTitleInput") && !byId("globalAnnouncementTitleInput").value) byId("globalAnnouncementTitleInput").value = announcement.title || "";
+    if (announcement && byId("globalAnnouncementBodyInput") && !byId("globalAnnouncementBodyInput").value) byId("globalAnnouncementBodyInput").value = announcement.body || "";
+    if (!announcement?.is_active || !announcement.updated_at) { if (byId("globalAnnouncementModal")) byId("globalAnnouncementModal").hidden = true; return; }
     const key = `${currentUserId() || ""}:${announcement.updated_at}`;
     if (key === shownAnnouncementKey) return;
     shownAnnouncementKey = key;
@@ -566,7 +568,7 @@
     const confirm = document.createElement("button"); confirm.className = "primary"; confirm.textContent = "Entendi"; confirm.addEventListener("click", () => { modal.hidden = true; });
     card.append(title, body, confirm); modal.append(card); modal.hidden = false; confirm.focus();
   });
-  window.addEventListener("conecta-auth-session-reset", () => { shownAnnouncementKey = ""; });
+  window.addEventListener("conecta-auth-session-reset", () => { shownAnnouncementKey = ""; if (byId("globalAnnouncementModal")) byId("globalAnnouncementModal").hidden = true; });
   const baseRenderAdminForAnnouncement = renderAdmin;
   renderAdmin = async () => {
     await baseRenderAdminForAnnouncement();
