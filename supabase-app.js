@@ -146,6 +146,33 @@ window.conectaFirebase = {
   signInWithEmailAndPassword: (_auth, email, password) => supabase.auth.signInWithPassword({ email, password }),
   sendPasswordResetEmail: (_auth, email) => supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin }),
   signOut: _auth => supabase.auth.signOut(), startDataSync, ensureUserProfile,
+  changePassword: async ({ currentPassword, newPassword }) => {
+    const signedInUser = window.conectaCurrentUser;
+    if (!signedInUser?.id || !signedInUser.email) throw new Error("Sua sessão expirou. Entre novamente para trocar a senha.");
+
+    // Verify the current credential on the isolated client so the main app session is not replaced.
+    const { data: verified, error: verificationError } = await accountClient.auth.signInWithPassword({
+      email: signedInUser.email,
+      password: currentPassword
+    });
+    if (verificationError) throw new Error("A senha atual está incorreta.");
+    if (verified.user?.id !== signedInUser.id) throw new Error("Não foi possível validar a conta conectada.");
+
+    // Reuse the freshly verified session for the authenticated password update.
+    if (verified.session) {
+      const { error: sessionError } = await supabase.auth.setSession({
+        access_token: verified.session.access_token,
+        refresh_token: verified.session.refresh_token
+      });
+      if (sessionError) throw sessionError;
+    }
+    const { data, error } = await supabase.auth.updateUser({
+      current_password: currentPassword,
+      password: newPassword
+    });
+    if (error) throw error;
+    return data.user;
+  },
   createUser: async (_admin, data) => {
     const { data: result, error } = await accountClient.auth.signUp({ email: data.email, password: data.password, options: { data: { name: data.name } } });
     if (error) throw error;
