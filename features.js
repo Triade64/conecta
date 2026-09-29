@@ -26,6 +26,7 @@
     const counts = event.detail || {};
     contacts.forEach(contact => { contact.unreadCount = Number(counts[contact.firestoreId]) || 0; });
     updateUnreadBadges();
+    if (typeof renderDashboardConversations === "function") renderDashboardConversations();
   });
   const addButton = (parent, label, className, onClick) => {
     const button = document.createElement("button");
@@ -306,6 +307,117 @@
     window.conectaDirectory = Array.isArray(event.detail) ? event.detail : [];
   });
 
+  // Keep the dashboard panels in sync with the RLS-filtered Supabase data.
+  const dashboardTime = value => {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return date.toLocaleDateString("pt-BR", { day: "2-digit", month: "short" });
+  };
+  const renderDashboardNotices = () => {
+    const feed = byId("feed");
+    if (!feed) return;
+    feed.replaceChildren();
+    const recent = (Array.isArray(notices) ? notices : []).slice(0, 3);
+    if (!recent.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Nenhum aviso publicado ainda.";
+      feed.append(empty);
+      return;
+    }
+    recent.forEach((notice, index) => {
+      const article = document.createElement("article");
+      article.className = "post";
+      const icon = document.createElement("div");
+      icon.className = "post-icon";
+      icon.setAttribute("aria-hidden", "true");
+      icon.textContent = "▧";
+      const body = document.createElement("div");
+      const title = document.createElement("div");
+      title.className = "post-title";
+      title.textContent = notice.title || "Aviso";
+      const tag = document.createElement("span");
+      tag.className = `tag ${index === 1 ? "green" : index === 2 ? "purple" : ""}`.trim();
+      tag.textContent = notice.sector || "Geral";
+      title.append(tag);
+      const meta = document.createElement("div");
+      meta.className = "post-meta";
+      meta.textContent = dashboardTime(notice.created_at || notice.createdAt) || notice.time || "";
+      const text = document.createElement("p");
+      text.textContent = notice.body || notice.text || "";
+      body.append(title, meta, text);
+      article.append(icon, body);
+      feed.append(article);
+    });
+  };
+  const renderDashboardConversations = () => {
+    const box = document.querySelector(".chat-preview");
+    if (!box) return;
+    box.replaceChildren();
+    const recent = (Array.isArray(contacts) ? contacts : [])
+      .slice()
+      .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
+      .slice(0, 4);
+    if (!recent.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "Nenhuma conversa iniciada ainda.";
+      box.append(empty);
+      return;
+    }
+    recent.forEach((conversation, index) => {
+      const entry = document.createElement("button");
+      entry.type = "button";
+      entry.className = "chat-entry dashboard-conversation";
+      entry.setAttribute("aria-label", `Abrir conversa: ${conversation.name || "Conversa"}`);
+      const avatar = document.createElement("span");
+      avatar.className = `person ${["", "green", "orange"][index % 3]}`.trim();
+      avatar.textContent = conversation.initials || (conversation.name || "?").split(/[ ._-]+/).map(part => part[0]).join("").slice(0, 2).toUpperCase();
+      const info = document.createElement("span");
+      info.className = "chat-info";
+      const name = document.createElement("span");
+      name.className = "chat-name";
+      name.textContent = conversation.name || "Conversa";
+      const snippet = document.createElement("span");
+      snippet.className = "chat-snippet";
+      snippet.textContent = conversation.lastMessage || conversation.last_message || "Nenhuma mensagem ainda";
+      info.append(name, snippet);
+      const time = document.createElement("span");
+      time.className = "chat-time";
+      time.textContent = dashboardTime(conversation.updated_at) || "";
+      const unread = Number(conversation.unreadCount) || 0;
+      if (unread) {
+        const badge = document.createElement("span");
+        badge.className = "unread-badge";
+        badge.textContent = unread > 99 ? "99+" : String(unread);
+        badge.title = `${unread} ${unread === 1 ? "mensagem não lida" : "mensagens não lidas"}`;
+        time.append(document.createElement("br"), badge);
+      }
+      entry.append(avatar, info, time);
+      entry.addEventListener("click", () => {
+        selectedContact = contacts.findIndex(item => item.firestoreId === conversation.firestoreId);
+        renderView("Conversas");
+        selectedContact = contacts.findIndex(item => item.firestoreId === conversation.firestoreId);
+        renderConversations();
+      });
+      box.append(entry);
+    });
+  };
+  const renderDashboardPanels = () => {
+    renderDashboardNotices();
+    renderDashboardConversations();
+  };
+  const dashboardStyle = document.createElement("style");
+  dashboardStyle.textContent = ".dashboard-conversation{width:100%;border:0;background:transparent;text-align:left;font:inherit;cursor:pointer}.dashboard-conversation:hover{background:#f8faf7;border-radius:10px}.dashboard-conversation .chat-name{display:block}.dashboard-conversation .chat-time{line-height:1.8}.dashboard-conversation .unread-badge{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 5px;border-radius:999px;background:#223e2a;color:white;font-size:10px;font-weight:700}";
+  document.head.append(dashboardStyle);
+  window.addEventListener("conecta-notices-sync", renderDashboardPanels);
+  window.addEventListener("conecta-notices-sync", renderDashboardPanels);
+  window.addEventListener("conecta-messages-sync", renderDashboardConversations);
+  window.addEventListener("conecta-unread-sync", () => {
+    renderDashboardConversations();
+  });
+
   // Replace the legacy channel-only view with the RLS-filtered channel + 1:1 list.
   window.addEventListener("conecta-conversations-sync", event => {
     const people = window.conectaDirectory || [];
@@ -314,6 +426,7 @@
       .map(c => ({ ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda", messages: [] }));
     if (selectedContact >= contacts.length) selectedContact = 0;
     if (byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Conversas") renderConversations();
+    renderDashboardConversations();
   });
 
   document.addEventListener("submit", async event => {
