@@ -5,6 +5,9 @@ begin;
 alter table public.messages
   add column if not exists attachment_path text,
   add column if not exists attachment_url text;
+
+create index if not exists messages_attachment_path_idx
+  on public.messages (attachment_path) where attachment_path is not null;
 do $$
 begin
   if not exists (select 1 from pg_constraint where conrelid='public.messages'::regclass and conname='messages_attachment_url_https') then
