@@ -11,22 +11,18 @@ Base inicial da aplicação interna do escritório, com foco em comunicação r�
 
 Conversas por setor criam seus canais no Firestore quando são acessadas pela primeira vez. Mensagens novas são gravadas na subcoleção do canal e carregadas em tempo real.
 
-## Firebase Hosting
+## Vercel + Supabase
 
-O arquivo `firebase.json` já está preparado para publicar a aplicação como site estático. Para publicar, instale o Firebase CLI, faça login e associe o projeto:
+A publicação deve ser feita conectando o repositório `Triade64/conecta` à Vercel. O arquivo `vercel.json` já configura o roteamento da aplicação.
 
-```bash
-npm install -g firebase-tools
-firebase login
-firebase use --add
-firebase deploy --only hosting
+No Supabase, execute `supabase/schema.sql` no SQL Editor. Depois, configure na Vercel as variáveis:
+
+```text
+VITE_SUPABASE_URL
+VITE_SUPABASE_PUBLISHABLE_KEY
 ```
 
-O projeto já está associado ao Firebase `triadechat`. O frontend inicializa Firebase App, Analytics, Authentication e Firestore. As regras iniciais do Firestore permitem acesso somente a usuários autenticados; as permissões por setor serão refinadas junto com o login.
-
-## Publicação automática pelo GitHub
-
-O workflow `.github/workflows/firebase-hosting.yml` publica automaticamente cada alteração enviada para a branch `main`. Para ativá-lo, cadastre no repositório o Secret `FIREBASE_SERVICE_ACCOUNT_TRIADECHAT` com o JSON de uma conta de serviço do projeto Firebase. Depois disso, cada push atualizará o endereço `triadechat.web.app`.
+O frontend usa Supabase Auth, Postgres com RLS e Realtime para perfis, avisos, lembretes, canais e mensagens. A chave `publishable`/`anon` pode ficar no frontend; a `service_role` nunca deve ser publicada.
 
 ## Como abrir
 
@@ -39,4 +35,3 @@ Abra `index.html` no navegador. Não há dependências obrigatórias para execut
 3. Banco compartilhado e controle de permissões.
 4. Atualização em tempo real e notificações.
 5. Publicação privada para a equipe.
-
