@@ -76,15 +76,20 @@ create policy notices_update_scoped on public.notices for update to authenticate
 create policy notices_delete_scoped on public.notices for delete to authenticated
   using (private.is_active_admin() or (author_id = (select auth.uid()) and private.can_access_sector(sector)));
 
+drop policy if exists "reminders_owner" on public.reminders;
+drop policy if exists reminders_read_owner on public.reminders;
 create policy reminders_read_owner on public.reminders for select to authenticated
-  using (owner_id = (select auth.uid()) or private.is_active_admin());
+  using (owner_id = (select auth.uid()));
+drop policy if exists reminders_insert_owner on public.reminders;
 create policy reminders_insert_owner on public.reminders for insert to authenticated
-  with check (owner_id = (select auth.uid()) or private.is_active_admin());
+  with check (owner_id = (select auth.uid()));
+drop policy if exists reminders_update_owner on public.reminders;
 create policy reminders_update_owner on public.reminders for update to authenticated
-  using (owner_id = (select auth.uid()) or private.is_active_admin())
-  with check (owner_id = (select auth.uid()) or private.is_active_admin());
+  using (owner_id = (select auth.uid()))
+  with check (owner_id = (select auth.uid()));
+drop policy if exists reminders_delete_owner on public.reminders;
 create policy reminders_delete_owner on public.reminders for delete to authenticated
-  using (owner_id = (select auth.uid()) or private.is_active_admin());
+  using (owner_id = (select auth.uid()));
 
 create policy conversations_read_scoped on public.conversations for select to authenticated
   using (private.is_active_admin() or (kind = 'channel' and private.can_access_sector(sector)));
