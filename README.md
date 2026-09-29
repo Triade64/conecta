@@ -24,7 +24,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 10. `supabase/profile-photos.sql`
 11. `supabase/chat-gif-attachments.sql`
 
-Os scripts de perfil e chat mantêm fotos privadas e habilitam GIFs animados no chat via painel do Windows `Win + .` ou colagem. O último script configura a agenda de vários avisos globais, imagens privadas e políticas de presença. As imagens dos avisos são redimensionadas e convertidas para WebP no navegador antes do envio; o aplicativo limita o arquivo otimizado a 900 KB e o bucket a 1 MiB. É possível programar início e fim da exibição. Lembretes permanecem privados para cada usuário, inclusive para administradores.
+O script `global-announcements-presence.sql` configura a agenda de avisos globais, imagens privadas e presença. As imagens dos avisos são redimensionadas para WebP no navegador (até 900 KB, com limite do bucket em 1 MiB) e podem ser programadas por data. `profile-photos.sql` cria fotos privadas de perfil em WebP (até 300 KB). `chat-gif-attachments.sql` habilita GIFs animados privados de até 8 MB no chat, incluindo colagem pelo painel do Windows `Win + .`. Lembretes permanecem privados para cada usuário, inclusive para administradores.
 
 ## Configuração da Vercel
 
