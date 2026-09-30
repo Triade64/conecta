@@ -5,41 +5,10 @@
   const notificationSoundPrefsKey = () => `conecta-browser-notification-sound:${currentUserId() || "guest"}`;
   const browserNotificationsEnabled = () => { try { return localStorage.getItem(notificationPrefsKey()) === "true"; } catch { return false; } };
   const browserNotificationSoundEnabled = () => { try { return localStorage.getItem(notificationSoundPrefsKey()) !== "false"; } catch { return true; } };
-  let notificationAudioContext = null;
-  const unlockNotificationAudio = async () => {
-    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return false;
-    try {
-      notificationAudioContext ||= new AudioContextClass();
-      if (notificationAudioContext.state === "suspended") await notificationAudioContext.resume();
-      return notificationAudioContext.state === "running";
-    } catch { return false; }
-  };
-  const playNotificationSound = () => {
-    if (!browserNotificationSoundEnabled() || !notificationAudioContext || notificationAudioContext.state !== "running") return;
-    try {
-      const now = notificationAudioContext.currentTime;
-      [880, 1174].forEach((frequency, index) => {
-        const start = now + index * 0.13;
-        const oscillator = notificationAudioContext.createOscillator();
-        const volume = notificationAudioContext.createGain();
-        oscillator.type = "sine";
-        oscillator.frequency.value = frequency;
-        volume.gain.setValueAtTime(0.0001, start);
-        volume.gain.exponentialRampToValueAtTime(0.12, start + 0.015);
-        volume.gain.exponentialRampToValueAtTime(0.0001, start + 0.11);
-        oscillator.connect(volume);
-        volume.connect(notificationAudioContext.destination);
-        oscillator.start(start);
-        oscillator.stop(start + 0.12);
-      });
-    } catch (error) { console.warn("Could not play notification sound", error); }
-  };
   const showBrowserNotification = (title, body, tag) => {
     if (!browserNotificationsEnabled() || !("Notification" in window) || Notification.permission !== "granted") return false;
     try {
-      new Notification(title, { body, tag, silent: false, icon: "./favicon.ico" });
-      playNotificationSound();
+      new Notification(title, { body, tag, silent: !browserNotificationSoundEnabled() });
       return true;
     } catch { return false; }
   };
@@ -155,6 +124,9 @@
     badge.classList.toggle("has-items", value > 0);
     badge.setAttribute("aria-label", value ? `${value} ${id === "noticeNavCount" ? plural(value, "aviso", "avisos") : id === "reminderNavCount" ? plural(value, "lembrete pendente", "lembretes pendentes") : plural(value, "mensagem não lida", "mensagens não lidas")}` : "Nenhuma pendência");
   };
+  const notificationSettingStyle = document.createElement("style");
+  notificationSettingStyle.textContent = ".notification-sound-option{display:flex;align-items:center;gap:9px;margin-top:14px;font-size:13px;color:#26392c}.notification-sound-option input{accent-color:#285237;width:16px;height:16px}";
+  document.head.append(notificationSettingStyle);
   const reminderAlertStyle = document.createElement("style");
   reminderAlertStyle.textContent = ".reminder-alerts{position:fixed;right:22px;bottom:22px;z-index:9500;width:min(390px,calc(100vw - 32px));padding:16px;background:#fff;border:1px solid #e6d2aa;border-left:4px solid #d99a3e;border-radius:14px;box-shadow:0 16px 42px #18231929}.reminder-alerts[hidden]{display:none}.reminder-alert-head{display:flex;align-items:center;justify-content:space-between;gap:12px;font-weight:700}.reminder-alert-list{display:grid;gap:9px;margin:13px 0}.reminder-alert-item{font-size:13px}.reminder-alert-item small{display:block;color:#8a8e87;margin-top:3px}.reminder-alert-actions{display:flex;justify-content:space-between;align-items:center}.reminder-alert-close{border:0;background:transparent;color:#6d746d;font-size:19px}.reminder-alert-link{border:0;background:transparent;color:#315b3c;font-weight:700;padding:5px 0}";
   document.head.append(reminderAlertStyle);
@@ -1124,7 +1096,6 @@
     };
     refreshNotificationUi();
     notificationButton?.addEventListener("click", async () => {
-      await unlockNotificationAudio();
       if (browserNotificationsEnabled()) {
         try { localStorage.removeItem(notificationPrefsKey()); } catch {}
         refreshNotificationUi();
