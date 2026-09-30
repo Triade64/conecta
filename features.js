@@ -361,8 +361,10 @@
   window.addEventListener("conecta-incoming-message-notification", event => {
     const detail = event.detail || {};
     if (!detail.id) return;
-    const body = `${detail.authorName || "Um colaborador"} enviou uma mensagem em ${detail.conversationName || "uma conversa"}.`;
-    const shown = showBrowserNotification("Nova mensagem", body, `message-${detail.id}`);
+    const body = detail.isNudge
+      ? `${detail.authorName || "Um colaborador"} chamou sua atenção!`
+      : `${detail.authorName || "Um colaborador"} enviou uma mensagem em ${detail.conversationName || "uma conversa"}.`;
+    const shown = showBrowserNotification(detail.isNudge ? "Chamou sua atenção!" : "Nova mensagem", body, `message-${detail.id}`);
     if (!shown && document.visibilityState === "visible") showToast(body);
   });
   window.addEventListener("conecta-profile-photo-sync", event => {
