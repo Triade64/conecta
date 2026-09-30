@@ -564,7 +564,11 @@
           thumb.loading = "lazy";
           choice.append(thumb);
           choice.addEventListener("click", () => {
-            if (!attachRemoteGif(original)) { showToast("Este GIF não pôde ser anexado."); return; }
+            if (!gif.id || !original) { showToast("Este GIF não pôde ser anexado."); return; }
+            delete form.dataset.attachmentUrl;
+            form.dataset.attachmentPath = "giphy:" + gif.id;
+            image.src = original;
+            preview.hidden = false;
             gifPanel.hidden = true;
             gifToggle.setAttribute("aria-expanded", "false");
             input.focus();
