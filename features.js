@@ -670,6 +670,27 @@
     const gifUploadRow = document.createElement("div");
     gifUploadRow.className = "gif-library-upload";
     gifUploadRow.append(gifUploadButton, gifUploadInput);
+    const windowsGifHelp = document.createElement("p");
+    windowsGifHelp.className = "gif-library-message";
+    windowsGifHelp.textContent = "Clique no campo da mensagem, pressione Windows + . e escolha um GIF. Se não aparecer, tente Ctrl + V.";
+    const windowsGifTest = document.createElement("button");
+    windowsGifTest.type = "button";
+    windowsGifTest.className = "gif-library-upload-button";
+    windowsGifTest.textContent = "Testar GIF do Windows";
+    const clipboardStatus = document.createElement("p");
+    clipboardStatus.className = "gif-library-message";
+    clipboardStatus.setAttribute("role", "status");
+    clipboardStatus.setAttribute("aria-live", "polite");
+    clipboardStatus.hidden = true;
+    let testingWindowsGif = false;
+    windowsGifTest.addEventListener("click", () => {
+      testingWindowsGif = true;
+      clipboardStatus.hidden = false;
+      clipboardStatus.textContent = "Teste ativo: escolha um GIF em Windows + . e, se necessário, pressione Ctrl + V. O resultado aparecerá aqui; nada será enviado à conversa.";
+      gifPanel.hidden = true;
+      gifToggle.setAttribute("aria-expanded", "false");
+      input.focus();
+    });
     const gifResults = document.createElement("div");
     gifResults.className = "gif-library-results";
     gifResults.setAttribute("aria-live", "polite");
@@ -679,7 +700,7 @@
     gifAttribution.target = "_blank";
     gifAttribution.rel = "noopener noreferrer";
     gifAttribution.textContent = "Powered by GIPHY";
-    gifPanel.append(gifHead, gifSearchRow, gifUploadRow, gifResults, gifAttribution);
+    gifPanel.append(gifHead, windowsGifHelp, windowsGifTest, gifSearchRow, gifUploadRow, gifResults, gifAttribution);
     const gifApiKey = () => window.conectaGifConfig?.apiKey?.trim() || "";
     let gifSearchTimer;
     let gifRequest;
@@ -768,7 +789,7 @@
         gifUploadInput.value = "";
       }
     });
-    form.before(gifPanel);
+    form.before(gifPanel, clipboardStatus);
     const emojiTools = form.querySelector(".emoji-compose-tools");
     if (emojiTools) form.insertBefore(gifToggle, emojiTools);
     else form.insertBefore(gifToggle, form.querySelector('button[type="submit"]'));
@@ -800,7 +821,8 @@
       if (file.type?.toLowerCase() !== "image/gif") return false;
       if (file.size > 8 * 1024 * 1024) throw new Error("O GIF precisa ter até 8 MB.");
       preview.hidden = false;
-      image.src = URL.createObjectURL(file);
+      const objectUrl = URL.createObjectURL(file);
+      image.src = objectUrl;
       form.dataset.gifUploading = "true";
       try {
         const result = await window.conectaFirebase.uploadChatGif(currentUser(), file);
@@ -808,7 +830,7 @@
         delete form.dataset.attachmentUrl;
         image.src = result.url;
         return true;
-      } finally { delete form.dataset.gifUploading; }
+      } finally { URL.revokeObjectURL(objectUrl); delete form.dataset.gifUploading; }
     };
     const handleClipboard = async event => {
       const clipboard = event.clipboardData;
@@ -827,9 +849,25 @@
       }
       const uri = clipboard.getData("text/uri-list").split(/\r?\n/).find(line => line && !line.startsWith("#")) || "";
       const plain = clipboard.getData("text/plain").trim();
-      const candidate = source || uri || plain;
+      const candidates = [source, uri, plain].filter(Boolean);
+      const candidate = candidates.find(value => /^data:image\/gif[;,]/i.test(value)) || candidates[0] || "";
       const hasGifFile = !!(gifItem || clipboardGif);
-      const hasGifData = candidate.startsWith("data:image/gif");
+      const hasGifData = /^data:image\/gif[;,]/i.test(candidate);
+      const hasOtherImage = Array.from(clipboard.items || []).some(item => item.kind === "file" && /^image\//i.test(item.type)) || Array.from(clipboard.files || []).some(file => /^image\//i.test(file.type));
+      if (testingWindowsGif) {
+        testingWindowsGif = false;
+        clipboardStatus.hidden = false;
+        const formats = Array.from(clipboard.types || []).join(", ") || "nenhum formato identificado";
+        clipboardStatus.textContent = `Recebido: ${formats}. `;
+        clipboardStatus.textContent += hasGifFile || hasGifData
+          ? "O navegador entregou um arquivo GIF. Ele será anexado para você conferir a prévia antes de enviar."
+          : candidates.some(value => /^https:\/\//i.test(value))
+            ? "O navegador entregou um endereço. Vamos verificar se ele pode ser anexado como GIF."
+            : hasOtherImage || source
+              ? "O navegador entregou uma imagem sem o arquivo GIF original. A animação não pode ser garantida."
+              : "Nenhum GIF ou endereço de imagem foi recebido. Selecione o GIF e tente Ctrl + V.";
+      }
+      if (form.dataset.gifUploading === "true") { event.preventDefault(); showToast("Aguarde o GIF terminar de anexar."); return; }
       if (hasGifFile || hasGifData) {
         event.preventDefault();
         try {
@@ -840,13 +878,19 @@
           }
           if (file) await attachGifFile(file);
           else if (!attachRemoteGif(candidate)) showToast("Não foi possível ler este GIF do painel do Windows.");
-        } catch (error) { preview.hidden = true; showToast(error?.message || "Não foi possível anexar o GIF."); }
+        } catch (error) {
+          preview.hidden = true;
+          image.removeAttribute("src");
+          delete form.dataset.attachmentPath;
+          delete form.dataset.attachmentUrl;
+          showToast(error?.message || "Não foi possível anexar o GIF.");
+        }
         return;
       }
-      if (candidate && attachRemoteGif(candidate)) { event.preventDefault(); return; }
-      if (containsRichMedia) {
+      if (candidates.some(attachRemoteGif)) { event.preventDefault(); showToast("GIF anexado. Confira a prévia antes de enviar."); return; }
+      if (hasOtherImage || (containsRichMedia && source && /<img[\s>]/i.test(html))) {
         event.preventDefault();
-        showToast("O conteúdo foi colado como link e não é um GIF compatível. Escolha um GIF no painel do Windows.");
+        showToast("O Windows entregou uma imagem sem um GIF compatível. A animação não pode ser recuperada dessa colagem. Use Testar GIF do Windows para conferir.");
         return;
       }
       if (plain) {
@@ -864,7 +908,7 @@
     input.setAttribute("autocomplete", "off");
     input.setAttribute("autocorrect", "off");
     input.setAttribute("spellcheck", "false");
-    input.title = "Use Windows + . e escolha um GIF; depois cole-o nesta conversa.";
+    input.title = "Use Windows + . e escolha um GIF. Se necessário, pressione Ctrl + V. Confira a prévia antes de enviar.";
   };
   document.addEventListener("submit", async event => {
     const form = event.target;
