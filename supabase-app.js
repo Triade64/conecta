@@ -381,6 +381,18 @@ window.conectaFirebase = {
     dispatch("conecta-unread-sync", Object.fromEntries((data || []).map(row => [row.conversation_id, Number(row.unread_count) || 0])));
   },
   watchMessages,
+  searchMessages: async query => {
+    const term = String(query || "").trim().slice(0, 120);
+    if (term.length < 2) return [];
+    const { data, error } = await supabase.from("messages")
+      .select("id,conversation_id,text,author_id,created_at")
+      .ilike("text", `%${term}%`)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .limit(12);
+    if (error) throw error;
+    return data || [];
+  },
   sendMessage: async (user, conversationId, text, replyTo = null, attachmentPath = null, attachmentUrl = null) => {
     const { error } = await supabase.from("messages").insert({
       conversation_id: conversationId, text: text || "", author_id: user.id, reply_to: replyTo,
