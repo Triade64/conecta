@@ -150,20 +150,31 @@ const watchMessages = async (conversationId, callback) => {
     if (hiddenError) throw hiddenError;
     const hiddenIds = new Set((hidden || []).map(x => x.message_id));
     const visible = (data || []).filter(x => !hiddenIds.has(x.id));
+    const gifIds = [...new Set(visible
+      .filter(x => x.attachment_path?.startsWith("giphy:"))
+      .map(x => x.attachment_path.slice("giphy:".length))
+      .filter(Boolean))];
+    const giphyUrls = new Map();
+    const apiKey = window.conectaGifConfig?.apiKey?.trim();
+    if (apiKey && gifIds.length) {
+      for (let offset = 0; offset < gifIds.length; offset += 100) {
+        const batch = gifIds.slice(offset, offset + 100);
+        try {
+          const params = new URLSearchParams({ api_key: apiKey, ids: batch.join(","), rating: "g" });
+          const response = await fetch("https://api.giphy.com/v1/gifs?" + params.toString(), { cache: "no-store" });
+          if (!response.ok) throw new Error("GIPHY returned " + response.status);
+          const payload = await response.json();
+          (payload.data || []).forEach(gif => {
+            const url = gif.images?.original?.url;
+            if (url) giphyUrls.set(gif.id, url);
+          });
+        } catch (error) { console.error("Could not resolve chat GIF batch", error); }
+      }
+    }
     const withAttachments = await Promise.all(visible.map(async x => {
       let attachmentUrl = x.attachment_url || "";
       if (x.attachment_path?.startsWith("giphy:")) {
-        const apiKey = window.conectaGifConfig?.apiKey?.trim();
-        const gifId = x.attachment_path.slice("giphy:".length);
-        if (apiKey && gifId) {
-          try {
-            const params = new URLSearchParams({ api_key: apiKey, rating: "g" });
-            const response = await fetch("https://api.giphy.com/v1/gifs/" + encodeURIComponent(gifId) + "?" + params.toString(), { cache: "no-store" });
-            if (!response.ok) throw new Error("GIPHY returned " + response.status);
-            const payload = await response.json();
-            attachmentUrl = payload.data?.images?.original?.url || "";
-          } catch (error) { console.error("Could not resolve GIPHY GIF", error); }
-        }
+        attachmentUrl = giphyUrls.get(x.attachment_path.slice("giphy:".length)) || "";
       } else if (x.attachment_path) {
         const { data: signed, error: signedError } = await supabase.storage.from("chat-media").createSignedUrl(x.attachment_path, 6 * 60 * 60);
         if (signedError) console.error("Could not sign chat GIF", signedError);
