@@ -3,7 +3,7 @@
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
   const notificationPrefsKey = () => `conecta-browser-notifications:${currentUserId() || "guest"}`;
   const notificationSoundPrefsKey = () => `conecta-browser-notification-sound:${currentUserId() || "guest"}`;
-  const browserNotificationsEnabled = () => { try { return localStorage.getItem(notificationPrefsKey()) === "true"; } catch { return false; } };
+  const browserNotificationsEnabled = () => { try { const saved = localStorage.getItem(notificationPrefsKey()); return saved === null ? !!window.conectaDesktop?.requestAttention : saved === "true"; } catch { return false; } };
   const browserNotificationSoundEnabled = () => { try { return localStorage.getItem(notificationSoundPrefsKey()) !== "false"; } catch { return true; } };
   const showBrowserNotification = (title, body, tag, allowWhenDisabled = false, onClick = null) => {
     if ((!allowWhenDisabled && !browserNotificationsEnabled()) || !("Notification" in window) || Notification.permission !== "granted") return false;
@@ -1435,7 +1435,7 @@
     refreshNotificationUi();
     notificationButton?.addEventListener("click", async () => {
       if (browserNotificationsEnabled() && "Notification" in window && Notification.permission === "granted") {
-        try { localStorage.removeItem(notificationPrefsKey()); } catch {}
+        try { localStorage.setItem(notificationPrefsKey(), "false"); } catch {}
         refreshNotificationUi();
         return;
       }
