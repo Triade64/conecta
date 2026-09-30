@@ -463,7 +463,7 @@
 
 
   const gifLibraryStyle = document.createElement("style");
-  gifLibraryStyle.textContent = ".conversation-chat{position:relative}.gif-picker-toggle{flex:0 0 auto;border:1px solid #dfe5dc;background:#fff;color:#315b3c;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:800;cursor:pointer}.gif-picker-toggle:hover{background:#edf2eb}.gif-library{position:absolute;right:14px;bottom:76px;z-index:20;width:min(390px,calc(100vw - 36px));padding:12px;background:#fff;border:1px solid #dfe5dc;border-radius:14px;box-shadow:0 12px 34px #1823192e}.gif-library[hidden]{display:none}.gif-library-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#253a2b}.gif-library-close{border:0;background:transparent;font-size:22px;color:#667166;cursor:pointer}.gif-library-search{box-sizing:border-box;width:100%;border:1px solid #dfe5dc;border-radius:9px;padding:9px 11px;font:inherit;outline:none}.gif-library-search:focus{border-color:#76947b;box-shadow:0 0 0 2px #e8eee7}.gif-library-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:310px;overflow:auto;margin:10px 0}.gif-library-item{height:86px;border:0;border-radius:8px;padding:0;overflow:hidden;background:#edf2eb;cursor:pointer}.gif-library-item img{width:100%;height:100%;object-fit:cover}.gif-library-message{grid-column:1/-1;margin:0;padding:20px 8px;text-align:center;color:#6e756e;font-size:13px;line-height:1.5}.gif-library-attribution{display:block;text-align:right;color:#666;font-size:11px;text-decoration:none}";
+  gifLibraryStyle.textContent = ".conversation-chat{position:relative}.gif-picker-toggle{flex:0 0 auto;border:1px solid #dfe5dc;background:#fff;color:#315b3c;border-radius:8px;padding:6px 8px;font-size:12px;font-weight:800;cursor:pointer}.gif-picker-toggle:hover{background:#edf2eb}.gif-library{position:absolute;right:14px;bottom:76px;z-index:20;width:min(390px,calc(100vw - 36px));padding:12px;background:#fff;border:1px solid #dfe5dc;border-radius:14px;box-shadow:0 12px 34px #1823192e}.gif-library[hidden]{display:none}.gif-library-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;color:#253a2b}.gif-library-close{border:0;background:transparent;font-size:22px;color:#667166;cursor:pointer}.gif-library-search-row{display:flex;gap:7px}.gif-library-search{box-sizing:border-box;min-width:0;flex:1;border:1px solid #dfe5dc;border-radius:9px;padding:9px 11px;font:inherit;outline:none}.gif-library-search-button{border:0;border-radius:9px;background:#315b3c;color:#fff;padding:0 12px;font-weight:700;cursor:pointer}.gif-library-search-button:disabled{opacity:.6;cursor:wait}.gif-library-search:focus{border-color:#76947b;box-shadow:0 0 0 2px #e8eee7}.gif-library-results{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;max-height:310px;overflow:auto;margin:10px 0}.gif-library-item{height:86px;border:0;border-radius:8px;padding:0;overflow:hidden;background:#edf2eb;cursor:pointer}.gif-library-item img{width:100%;height:100%;object-fit:cover}.gif-library-message{grid-column:1/-1;margin:0;padding:20px 8px;text-align:center;color:#6e756e;font-size:13px;line-height:1.5}.gif-library-attribution{display:block;text-align:right;color:#666;font-size:11px;text-decoration:none}";
   document.head.append(gifLibraryStyle);
 
   const getChatDraftText = input => (input?.innerText || input?.textContent || "").replace(/\u00a0/g, " ").trim();
@@ -512,6 +512,14 @@
     gifSearch.className = "gif-library-search";
     gifSearch.placeholder = "Buscar GIFs…";
     gifSearch.setAttribute("aria-label", "Buscar GIFs");
+    gifSearch.minLength = 2;
+    const gifSearchButton = document.createElement("button");
+    gifSearchButton.type = "button";
+    gifSearchButton.className = "gif-library-search-button";
+    gifSearchButton.textContent = "Buscar";
+    const gifSearchRow = document.createElement("div");
+    gifSearchRow.className = "gif-library-search-row";
+    gifSearchRow.append(gifSearch, gifSearchButton);
     const gifResults = document.createElement("div");
     gifResults.className = "gif-library-results";
     gifResults.setAttribute("aria-live", "polite");
@@ -521,7 +529,7 @@
     gifAttribution.target = "_blank";
     gifAttribution.rel = "noopener noreferrer";
     gifAttribution.textContent = "Powered by GIPHY";
-    gifPanel.append(gifHead, gifSearch, gifResults, gifAttribution);
+    gifPanel.append(gifHead, gifSearchRow, gifResults, gifAttribution);
     const gifApiKey = () => window.conectaGifConfig?.apiKey?.trim() || "";
     let gifSearchTimer;
     let gifRequest;
@@ -579,9 +587,14 @@
       if (!gifPanel.hidden) gifSearch.focus();
     });
     gifClose.addEventListener("click", () => { gifPanel.hidden = true; gifToggle.setAttribute("aria-expanded", "false"); });
-    gifSearch.addEventListener("input", () => {
-      clearTimeout(gifSearchTimer);
-      gifSearchTimer = setTimeout(() => searchGifs(gifSearch.value.trim()), 350);
+    const submitGifSearch = () => {
+      const query = gifSearch.value.trim();
+      if (query.length < 2) { showGifMessage("Digite pelo menos 2 caracteres para buscar."); return; }
+      searchGifs(query);
+    };
+    gifSearchButton.addEventListener("click", submitGifSearch);
+    gifSearch.addEventListener("keydown", event => {
+      if (event.key === "Enter") { event.preventDefault(); submitGifSearch(); }
     });
     form.before(gifPanel);
     const emojiTools = form.querySelector(".emoji-compose-tools");
