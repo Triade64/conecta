@@ -495,7 +495,7 @@
       if (!gifPanel.contains(event.target) && event.target !== gifToggle) { gifPanel.hidden = true; gifToggle.setAttribute("aria-expanded", "false"); }
     });
 
-    const gifToggle = document.createElement("button");
+    const gifToggle = form.querySelector(".gif-picker-toggle") || document.createElement("button");
     gifToggle.type = "button";
     gifToggle.className = "gif-picker-toggle";
     gifToggle.textContent = "GIF";
