@@ -1,7 +1,9 @@
 'use strict';
-const { app, BrowserWindow, Menu, Tray, ipcMain, shell, dialog } = require('electron');
+const { app, BrowserWindow, Menu, Tray, ipcMain, shell, dialog, Notification } = require('electron');
 const path = require('node:path');
-const { SITE_URL, trustedUrl, validAttentionSender, bringForward } = require('./attention.cjs');
+const { SITE_URL, trustedUrl, validSender, validAttentionSender, bringForward } = require('./attention.cjs');
+const { notificationOptions, showNativeNotification } = require('./notifications.cjs');
+const activeNotifications = new Map();
 let mainWindow, tray, quitting = false, lastAttention = 0;
 app.setAppUserModelId('br.com.triade.conecta');
 if (!app.requestSingleInstanceLock()) app.quit();
@@ -43,6 +45,15 @@ async function createWindow() {
     if (Date.now() - lastAttention < 15000) return { ok: false };
     lastAttention = Date.now();
     return { ok: bringForward(mainWindow) };
+  });
+  ipcMain.handle('conecta:notify', (event, payload) => {
+    if (!validSender(event, mainWindow)) return { ok: false, error: 'Origem não autorizada.' };
+    const options = notificationOptions(payload);
+    if (!options) return { ok: false, error: 'Notificação inválida.' };
+    return showNativeNotification(Notification, { ...options, icon: path.join(__dirname, 'assets/icon.png') }, () => {
+      bringForward(mainWindow);
+      if (!contents.isDestroyed() && trustedUrl(contents.getURL())) contents.send('conecta:notification-click', payload.tag);
+    }, activeNotifications, payload.tag);
   });
   const open = () => bringForward(mainWindow);
   tray = new Tray(path.join(__dirname, 'assets/icon.png'));

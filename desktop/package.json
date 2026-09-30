@@ -1,6 +1,6 @@
 {
   "name": "conecta-desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Conecta da Tríade para Windows",
   "author": "Tríade",
@@ -18,9 +18,28 @@
     "appId": "br.com.triade.conecta",
     "productName": "Conecta",
     "asar": true,
-    "files": ["main.cjs", "preload.cjs", "attention.cjs", "assets/*", "package.json"],
-    "directories": {"output": "dist"},
-    "win": {"target": "nsis", "icon": "assets/icon.ico", "artifactName": "Conecta-Setup-${version}-${arch}.exe"},
-    "nsis": {"oneClick": false, "perMachine": false, "allowToChangeInstallationDirectory": true, "createDesktopShortcut": true, "createStartMenuShortcut": true}
+    "files": [
+      "main.cjs",
+      "preload.cjs",
+      "attention.cjs",
+      "notifications.cjs",
+      "assets/*",
+      "package.json"
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "assets/icon.ico",
+      "artifactName": "Conecta-Setup-${version}-${arch}.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
   }
 }

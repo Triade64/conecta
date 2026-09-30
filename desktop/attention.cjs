@@ -5,10 +5,12 @@ function trustedUrl(value) {
   try { const url = new URL(value); return url.origin === SITE_URL && !url.username && !url.password; }
   catch { return false; }
 }
-function validAttentionSender(event, window, id) {
+function validSender(event, window) {
   return !!window && !window.isDestroyed() && event.sender === window.webContents &&
-    event.senderFrame === window.webContents.mainFrame && trustedUrl(event.senderFrame?.url) &&
-    typeof id === 'string' && UUID.test(id);
+    event.senderFrame === window.webContents.mainFrame && trustedUrl(event.senderFrame?.url);
+}
+function validAttentionSender(event, window, id) {
+  return validSender(event, window) && typeof id === 'string' && UUID.test(id);
 }
 function bringForward(window) {
   if (!window || window.isDestroyed()) return false;
@@ -20,4 +22,4 @@ function bringForward(window) {
   window.flashFrame(!window.isFocused());
   return true;
 }
-module.exports = { SITE_URL, trustedUrl, validAttentionSender, bringForward };
+module.exports = { SITE_URL, trustedUrl, validSender, validAttentionSender, bringForward };

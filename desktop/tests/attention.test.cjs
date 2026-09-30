@@ -27,9 +27,9 @@ test('focused non-minimized window does not restore and stops taskbar flashing',
   for (const method of ['restore','show','moveTop','focus','flashFrame']) win[method] = value => calls.push([method,value]);
   assert(bringForward(win));assert(!calls.some(row => row[0] === 'restore'));assert.equal(calls.at(-1)[1],false);
 });
-test('preload exposes only the single attention channel', () => {
+test('preload exposes only attention and notification capabilities', () => {
   const vm = require('node:vm'), fs = require('node:fs'), calls = []; let exposed;
   const electron = {contextBridge:{exposeInMainWorld:(name,api)=>{assert.equal(name,'conectaDesktop');exposed=api;}},ipcRenderer:{invoke:(...args)=>{calls.push(args);return Promise.resolve({ok:true});}}};
   vm.runInNewContext(fs.readFileSync(require.resolve('../preload.cjs'),'utf8'),{require:name=>{assert.equal(name,'electron');return electron;}});
-  assert.deepEqual(Object.keys(exposed),['requestAttention']);exposed.requestAttention(id);assert.deepEqual(calls,[['conecta:attention',id]]);
+  assert.deepEqual(Object.keys(exposed),['requestAttention','notify','onNotificationClick']);exposed.requestAttention(id);assert.deepEqual(calls,[['conecta:attention',id]]);
 });
