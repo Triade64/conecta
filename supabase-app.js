@@ -88,8 +88,8 @@ async function loadData(user) {
 async function dispatchIncomingMessageNotification(payload, user) {
   const message = payload?.new;
   if (!message?.id || !message.author_id || message.author_id === user.id) return;
-  const { data: visibleMessage, error } = await supabase.from("messages").select("id,conversation_id,author_id").eq("id", message.id).maybeSingle();
-  if (error || !visibleMessage || visibleMessage.author_id === user.id) return;
+  const { data: visibleMessage, error } = await supabase.from("messages").select("id,conversation_id,author_id,text,deleted_at").eq("id", message.id).maybeSingle();
+  if (error || !visibleMessage || visibleMessage.deleted_at || visibleMessage.author_id === user.id) return;
   const [{ data: conversation }, { data: directory }] = await Promise.all([
     supabase.from("conversations").select("name,kind").eq("id", visibleMessage.conversation_id).maybeSingle(),
     supabase.rpc("list_team_directory")
@@ -100,6 +100,8 @@ async function dispatchIncomingMessageNotification(payload, user) {
     conversationId: visibleMessage.conversation_id,
     authorId: visibleMessage.author_id,
     authorName: author?.name || "Um colaborador",
+    isNudge: visibleMessage.text === "🔔 Chamou sua atenção!",
+    conversationKind: conversation?.kind || null,
     conversationName: conversation?.kind === "channel" ? (conversation.name || "um canal") : "sua conversa individual"
   });
 }
