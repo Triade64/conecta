@@ -45,6 +45,144 @@
   };
   const isActiveAdmin = () => window.conectaCurrentProfile?.role === "admin" && window.conectaCurrentProfile?.active === true;
   const byId = id => document.getElementById(id);
+  const globalSearchStyle = document.createElement("style");
+  globalSearchStyle.textContent = ".search-loading{padding:10px;color:#727970;font-size:12px}.search-result-highlight{outline:3px solid #91b75d;outline-offset:2px;transition:outline-color .35s}";
+  document.head.append(globalSearchStyle);
+  const globalSearch = byId("globalSearch");
+  const globalSearchInput = byId("globalSearchInput");
+  const globalSearchResults = byId("globalSearchResults");
+  let globalSearchTimer = null;
+  let globalSearchRequest = 0;
+  const hideGlobalSearch = () => { if (globalSearchResults) globalSearchResults.hidden = true; };
+  const openConversationFromSearch = (contactIndex, messageId = null) => {
+    const contact = contacts[contactIndex];
+    if (!contact) return;
+    document.querySelectorAll(".nav button,.channel").forEach(button => button.classList.remove("active"));
+    document.querySelectorAll('[data-view="Conversas"]').forEach(button => button.classList.add("active"));
+    document.querySelector(".welcome").style.display = "none";
+    document.querySelector(".stats").style.display = "none";
+    document.querySelector(".grid").style.display = "none";
+    byId("viewPanel").classList.add("show");
+    byId("backDashboard").classList.add("show");
+    byId("crumb").textContent = "Conversas";
+    selectedContact = contactIndex;
+    hideGlobalSearch();
+    if (messageId) {
+      const findAndFocus = remaining => {
+        const box = byId("chatMessages");
+        const bubble = [...(box?.querySelectorAll(".bubble") || [])].find(item => item.dataset.messageId === messageId);
+        if (bubble) {
+          bubble.scrollIntoView({ behavior: "smooth", block: "center" });
+          bubble.classList.add("search-result-highlight");
+          setTimeout(() => bubble.classList.remove("search-result-highlight"), 2500);
+        } else if (remaining > 0) setTimeout(() => findAndFocus(remaining - 1), 150);
+      };
+      setTimeout(() => findAndFocus(30), 100);
+    }
+    renderConversations();
+  };
+  const renderGlobalSearch = async query => {
+    const request = ++globalSearchRequest;
+    const term = query.trim();
+    if (!globalSearchResults || term.length < 2) { hideGlobalSearch(); return; }
+    globalSearchResults.hidden = false;
+    globalSearchResults.replaceChildren();
+    const loading = document.createElement("div");
+    loading.className = "global-search-status";
+    loading.textContent = "Buscando mensagens, pessoas e avisos…";
+    globalSearchResults.append(loading);
+    const needle = term.toLocaleLowerCase("pt-BR");
+    const people = (window.conectaDirectory || []).filter(person =>
+      [person.name, person.email, person.sector, person.role].some(value => String(value || "").toLocaleLowerCase("pt-BR").includes(needle))
+    ).slice(0, 4);
+    const conversationMatches = contacts.map((item, index) => ({ item, index }))
+      .filter(row => String(row.item.name || "").toLocaleLowerCase("pt-BR").includes(needle)).slice(0, 3);
+    const noticeMatches = (Array.isArray(notices) ? notices : []).filter(item =>
+      [item.title, item.body, item.text, item.sector].some(value => String(value || "").toLocaleLowerCase("pt-BR").includes(needle))
+    ).slice(0, 4);
+    let messages = [];
+    let messageError = null;
+    try { messages = await window.conectaFirebase?.searchMessages?.(term) || []; }
+    catch (error) { messageError = error; console.warn("Global message search failed", error); }
+    if (request !== globalSearchRequest || !globalSearchInput || globalSearchInput.value.trim() !== term) return;
+    globalSearchResults.replaceChildren();
+    const addGroup = (heading, rows, titleOf, detailOf, onSelect) => {
+      if (!rows.length) return;
+      const group = document.createElement("section");
+      group.className = "search-result-group";
+      const label = document.createElement("div");
+      label.className = "search-result-heading";
+      label.textContent = heading;
+      group.append(label);
+      rows.forEach(row => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "search-result-item";
+        const title = document.createElement("strong");
+        title.textContent = titleOf(row);
+        const detail = document.createElement("small");
+        detail.textContent = detailOf(row) || "";
+        button.append(title, detail);
+        button.addEventListener("click", () => onSelect(row));
+        group.append(button);
+      });
+      globalSearchResults.append(group);
+    };
+    addGroup("Mensagens", messages, row => {
+      const contact = contacts.find(item => item.firestoreId === row.conversation_id);
+      return contact?.name || "Conversa";
+    }, row => {
+      const author = (window.conectaDirectory || []).find(person => person.id === row.author_id)?.name || "Colaborador";
+      return `${author}: ${row.text || "Anexo"}`;
+    }, row => {
+      const index = contacts.findIndex(item => item.firestoreId === row.conversation_id);
+      if (index < 0) { showToast("Conversa não disponível para este usuário."); return; }
+      openConversationFromSearch(index, row.id);
+    });
+    addGroup("Pessoas", people, row => row.name || "Colaborador", row => row.sector || row.role || row.email || "", async row => {
+      let index = contacts.findIndex(item => item.kind === "direct" && item.directUserId === row.id);
+      if (index < 0) {
+        const fb = window.conectaFirebase, user = currentUser();
+        if (!fb?.startDirectConversation || !user) { showToast("Não foi possível iniciar a conversa agora."); return; }
+        try {
+          const conversationId = await fb.startDirectConversation(user, row.id);
+          index = contacts.findIndex(item => item.firestoreId === conversationId);
+        } catch (error) { showError(error); return; }
+      }
+      if (index >= 0) openConversationFromSearch(index);
+      else showToast("A conversa individual não ficou disponível. Tente novamente.");
+    });
+    addGroup("Conversas", conversationMatches, row => row.item.name || "Conversa", row => row.item.type || "Abrir conversa", row => openConversationFromSearch(row.index));
+    addGroup("Avisos", noticeMatches, row => row.title || "Aviso", row => row.sector || "Geral", () => {
+      hideGlobalSearch();
+      document.querySelectorAll("[data-view]").forEach(button => button.classList.toggle("active", button.dataset.view === "Quadro de avisos"));
+      renderView("Quadro de avisos");
+    });
+    if (!globalSearchResults.childElementCount) {
+      const empty = document.createElement("div");
+      empty.className = "search-results-empty";
+      empty.textContent = messageError ? "Não foi possível pesquisar mensagens. Confira sua conexão." : "Nenhum resultado encontrado.";
+      globalSearchResults.append(empty);
+    }
+  };
+  if (globalSearchInput) {
+    globalSearchInput.addEventListener("input", () => {
+      clearTimeout(globalSearchTimer);
+      if (globalSearchInput.value.trim().length < 2) { hideGlobalSearch(); return; }
+      globalSearchTimer = setTimeout(() => renderGlobalSearch(globalSearchInput.value), 350);
+    });
+    globalSearchInput.addEventListener("focus", () => {
+      if (globalSearchInput.value.trim().length >= 2 && globalSearchResults.childElementCount) globalSearchResults.hidden = false;
+    });
+    globalSearchInput.addEventListener("keydown", event => {
+      if (event.key === "Escape") { hideGlobalSearch(); globalSearchInput.blur(); }
+      if (event.key === "Enter") { clearTimeout(globalSearchTimer); renderGlobalSearch(globalSearchInput.value); }
+    });
+    document.addEventListener("click", event => {
+      if (globalSearch && !globalSearch.contains(event.target)) hideGlobalSearch();
+    });
+  }
+
   const writeCount = (id, count) => { if (byId(id)) byId(id).textContent = String(count); };
   const plural = (count, one, many) => count === 1 ? one : many;
   const optimizeGlobalAnnouncementImage = async file => {
