@@ -1,6 +1,6 @@
 {
   "name": "conecta-desktop",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "private": true,
   "description": "Conecta da Tríade para Windows",
   "author": "Tríade",
@@ -23,6 +23,7 @@
       "preload.cjs",
       "attention.cjs",
       "notifications.cjs",
+      "updater.cjs",
       "assets/*",
       "package.json"
     ],
@@ -40,6 +41,17 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Triade64",
+        "repo": "conecta",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "6.8.9"
   }
 }

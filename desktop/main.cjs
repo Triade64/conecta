@@ -3,6 +3,8 @@ const { app, BrowserWindow, Menu, Tray, ipcMain, shell, dialog, Notification } =
 const path = require('node:path');
 const { SITE_URL, trustedUrl, validSender, validAttentionSender, bringForward } = require('./attention.cjs');
 const { notificationOptions, showNativeNotification } = require('./notifications.cjs');
+const { autoUpdater } = require('electron-updater');
+const { createUpdater } = require('./updater.cjs');
 const activeNotifications = new Map();
 let mainWindow, tray, quitting = false, lastAttention = 0;
 app.setAppUserModelId('br.com.triade.conecta');
@@ -55,23 +57,26 @@ async function createWindow() {
       if (!contents.isDestroyed() && trustedUrl(contents.getURL())) contents.send('conecta:notification-click', payload.tag);
     }, activeNotifications, payload.tag);
   });
+  const updates = createUpdater({ app, autoUpdater, dialog, getWindow: () => mainWindow, prepareQuit: () => { quitting = true; } });
   const open = () => bringForward(mainWindow);
   tray = new Tray(path.join(__dirname, 'assets/icon.png'));
   tray.setToolTip('Conecta — Tríade');
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: 'Abrir Conecta', click: open },
-    { label: 'Atualizar', click: () => { open(); contents.reload(); } },
+    { label: 'Recarregar conversa', click: () => { open(); contents.reload(); } },
+    { label: 'Verificar atualizações', click: () => { open(); void updates.check(); } },
     { type: 'separator' }, { label: 'Sair do Conecta', click: () => app.quit() }
   ]));
   tray.on('double-click', open);
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     { label: 'Conecta', submenu: [
-      { label: 'Atualizar', accelerator: 'CmdOrCtrl+R', click: () => contents.reload() },
+      { label: 'Recarregar conversa', accelerator: 'CmdOrCtrl+R', click: () => contents.reload() },
+      { label: 'Verificar atualizações', click: () => { open(); void updates.check(); } },
       { label: 'Sair do Conecta', click: () => app.quit() }
     ] },
     { label: 'Editar', submenu: [{ role: 'undo' }, { role: 'redo' }, { type: 'separator' }, { role: 'cut' }, { role: 'copy' }, { role: 'paste' }, { role: 'selectAll' }] },
     { label: 'Exibir', submenu: [{ role: 'resetZoom' }, { role: 'zoomIn' }, { role: 'zoomOut' }] }
   ]));
   try { await mainWindow.loadURL(SITE_URL); }
-  catch { mainWindow.show(); dialog.showMessageBox(mainWindow, { type: 'error', title: 'Conecta', message: 'Não foi possível conectar ao Conecta.', detail: 'Confira sua conexão e use Conecta → Atualizar para tentar novamente.' }); }
+  catch { mainWindow.show(); dialog.showMessageBox(mainWindow, { type: 'error', title: 'Conecta', message: 'Não foi possível conectar ao Conecta.', detail: 'Confira sua conexão e use Conecta → Recarregar conversa para tentar novamente.' }); }
 }
