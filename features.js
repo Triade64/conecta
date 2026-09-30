@@ -487,14 +487,6 @@
     });
     preview.append(image, remove);
     form.before(preview);
-    form.before(gifPanel);
-    const emojiTools = form.querySelector(".emoji-compose-tools");
-    if (emojiTools) form.insertBefore(gifToggle, emojiTools);
-    else form.insertBefore(gifToggle, form.querySelector('button[type="submit"]'));
-    form.closest(".conversation-chat")?.addEventListener("click", event => {
-      if (!gifPanel.contains(event.target) && event.target !== gifToggle) { gifPanel.hidden = true; gifToggle.setAttribute("aria-expanded", "false"); }
-    });
-
     const gifToggle = form.querySelector(".gif-picker-toggle") || document.createElement("button");
     gifToggle.type = "button";
     gifToggle.className = "gif-picker-toggle";
@@ -591,6 +583,14 @@
       clearTimeout(gifSearchTimer);
       gifSearchTimer = setTimeout(() => searchGifs(gifSearch.value.trim()), 350);
     });
+    form.before(gifPanel);
+    const emojiTools = form.querySelector(".emoji-compose-tools");
+    if (emojiTools) form.insertBefore(gifToggle, emojiTools);
+    else form.insertBefore(gifToggle, form.querySelector('button[type="submit"]'));
+    form.closest(".conversation-chat")?.addEventListener("click", event => {
+      if (!gifPanel.contains(event.target) && event.target !== gifToggle) { gifPanel.hidden = true; gifToggle.setAttribute("aria-expanded", "false"); }
+    });
+
     const attachRemoteGif = url => {
       try {
         const parsed = new URL(url);
