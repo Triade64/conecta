@@ -515,17 +515,24 @@
       const clipboardGif = Array.from(clipboard.files || []).find(file => file.type.toLowerCase() === "image/gif");
       const html = clipboard.getData("text/html");
       let source = "";
+      let containsRichMedia = false;
       if (html) {
         const doc = new DOMParser().parseFromString(html, "text/html");
-        source = doc.querySelector("img")?.getAttribute("src") || "";
+        const imageElement = doc.querySelector("img[src]");
+        const linkElement = doc.querySelector("a[href]");
+        source = imageElement?.getAttribute("src") || linkElement?.getAttribute("href") || "";
+        containsRichMedia = !!(imageElement || linkElement);
       }
-      const uri = clipboard.getData("text/uri-list").split(/\\r?\\n/).find(line => line && !line.startsWith("#")) || "";
-      const candidate = source || uri;
-      if (gifItem || candidate.startsWith("data:image/gif")) {
+      const uri = clipboard.getData("text/uri-list").split(/\r?\n/).find(line => line && !line.startsWith("#")) || "";
+      const plain = clipboard.getData("text/plain").trim();
+      const candidate = source || uri || plain;
+      const hasGifFile = !!(gifItem || clipboardGif);
+      const hasGifData = candidate.startsWith("data:image/gif");
+      if (hasGifFile || hasGifData) {
         event.preventDefault();
         try {
           let file = gifItem?.getAsFile() || clipboardGif || null;
-          if (!file && candidate.startsWith("data:image/gif")) {
+          if (!file && hasGifData) {
             const response = await fetch(candidate);
             file = await response.blob();
           }
@@ -534,9 +541,12 @@
         } catch (error) { preview.hidden = true; showToast(error?.message || "Não foi possível anexar o GIF."); }
         return;
       }
-      if (attachRemoteGif(candidate)) { event.preventDefault(); return; }
-      const plain = clipboard.getData("text/plain").trim();
-      if (attachRemoteGif(plain)) { event.preventDefault(); return; }
+      if (candidate && attachRemoteGif(candidate)) { event.preventDefault(); return; }
+      if (containsRichMedia) {
+        event.preventDefault();
+        showToast("O conteúdo foi colado como link e não é um GIF compatível. Escolha um GIF no painel do Windows.");
+        return;
+      }
       if (plain) {
         event.preventDefault();
         document.execCommand("insertText", false, plain);
