@@ -68,7 +68,7 @@
       { transform: "translateX(8px)" }, { transform: "translateX(-6px)" },
       { transform: "translateX(6px)" }, { transform: "translateX(-3px)" },
       { transform: "translateX(3px)" }, { transform: "translateX(0)" }
-    ], { duration: 1000, easing: "ease-in-out" });
+    ], { duration: 3000, easing: "ease-in-out" });
   };
   const revealPending = () => {
     if (!pendingNudge || document.visibilityState !== "visible") return;
