@@ -11,10 +11,13 @@
   const generate = (config, endDate) => {
     const people = sortedPeople(config.people || []);
     if (!config.startDate || people.length < 2) return {};
-    const start = stamp(config.startDate), end = stamp(endDate);
+    const taskStart = stamp(config.startDate), coffeeStart = config.coffeeStartDate ? stamp(config.coffeeStartDate) : taskStart;
+    const start = Math.min(taskStart, coffeeStart), end = stamp(endDate);
     if ((end - start) / dayMs > 20000) throw new Error("Selecione uma data mais próxima do início da escala.");
     let dishCursor = Math.max(0, people.indexOf(config.startWasher));
     let sweepCursor = Math.max(0, people.indexOf(config.startSweeper));
+    const coffeeGroups = config.coffeeGroups || [];
+    let coffeeCursor = Math.max(0, Math.min(coffeeGroups.length - 1, Number(config.startCoffeeGroup) || 0));
     const result = {};
     for (let time = start; time <= end; time += dayMs) {
       const date = new Date(time).toISOString().slice(0, 10);
@@ -30,9 +33,11 @@
         return null;
       };
       const manual = name => people.includes(name) && !absent.has(name) ? name : null;
-      const dishes = edit.dishes ?? (weekday >= 1 && weekday <= 5);
-      const sweep = edit.sweep ?? (weekday === 3);
+      const dishes = time >= taskStart && (edit.dishes ?? (weekday >= 1 && weekday <= 5));
+      const sweep = time >= taskStart && (edit.sweep ?? (weekday === 3));
+      const coffee = time >= coffeeStart && coffeeGroups.length > 0 && (edit.coffee ?? (weekday >= 1 && weekday <= 5));
       let wash = null, dry = null, sweeper = null;
+      let coffeeGroup = null, coffeePeople = null;
       if (dishes && available.length >= 2) {
         wash = manual(edit.wash) || next(dishCursor);
         dry = manual(edit.dry);
@@ -44,7 +49,12 @@
         sweeper = manual(edit.sweeper) || next(sweepCursor);
         sweepCursor = (people.indexOf(sweeper) + 1) % people.length;
       }
-      result[date] = { date, dishes, sweep, wash, dry, sweeper, absent: [...absent], note: edit.note || "", changed: !!config.days?.[date] };
+      if (coffee) {
+        coffeeGroup = Number.isInteger(edit.coffeeGroup) && edit.coffeeGroup >= 0 && edit.coffeeGroup < coffeeGroups.length ? edit.coffeeGroup : coffeeCursor;
+        coffeePeople = [...coffeeGroups[coffeeGroup]];
+        coffeeCursor = (coffeeGroup + 1) % coffeeGroups.length;
+      }
+      result[date] = { date, dishes, sweep, coffee, wash, dry, sweeper, coffeeGroup, coffeePeople, absent: [...absent], note: edit.note || "", changed: !!config.days?.[date] };
     }
     return result;
   };

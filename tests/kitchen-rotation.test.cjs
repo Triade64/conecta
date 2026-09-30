@@ -40,3 +40,24 @@ test('invalid dates fail and empty config is safe',()=>{
  assert.throws(()=>generate({...base,startDate:'2026-02-30'},'2026-09-30'));
  assert.deepEqual(sortedPeople([' C ','Ána','B','C']),['Ána','B','C']);
 });
+const coffeeConfig={...base,coffeeStartDate:'2026-09-30',startCoffeeGroup:0,coffeeGroups:[['Gabriel','Gabriele','Janice','Rose'],['Klarice','Lucas','Simone','Vitória']]};
+test('coffee follows today/tomorrow groups and skips weekends',()=>{
+ const result=generate(coffeeConfig,'2026-10-05');
+ assert.equal(result['2026-09-29'].coffee,false);
+ assert.deepEqual(result['2026-09-30'].coffeePeople,coffeeConfig.coffeeGroups[0]);
+ assert.deepEqual(result['2026-10-01'].coffeePeople,coffeeConfig.coffeeGroups[1]);
+ assert.equal(result['2026-10-02'].coffeeGroup,0);assert.equal(result['2026-10-03'].coffee,false);
+ assert.equal(result['2026-10-05'].coffeeGroup,1);
+});
+test('suspended coffee preserves the next group and absences do not reshuffle it',()=>{
+ const result=generate({...coffeeConfig,days:{'2026-09-30':{coffee:false},'2026-10-01':{absent:['Gabriel']}}},'2026-10-02');
+ assert.equal(result['2026-09-30'].coffeePeople,null);assert.deepEqual(result['2026-10-01'].coffeePeople,coffeeConfig.coffeeGroups[0]);assert.equal(result['2026-10-02'].coffeeGroup,1);
+});
+test('coffee group override affects the next group and transfer keeps all four',()=>{
+ const result=generate({...coffeeConfig,days:{'2026-09-30':{coffeeGroup:1},'2026-10-01':{coffee:false},'2026-10-03':{coffee:true,coffeeGroup:0}}},'2026-10-05');
+ assert.equal(result['2026-09-30'].coffeeGroup,1);assert.equal(result['2026-10-02'].coffeeGroup,0);assert.deepEqual(result['2026-10-03'].coffeePeople,coffeeConfig.coffeeGroups[0]);assert.equal(result['2026-10-05'].coffeeGroup,1);
+});
+test('coffee can begin before the dishes and sweeping start date',()=>{
+ const result=generate({...coffeeConfig,startDate:'2026-10-05'},'2026-10-05');
+ assert.equal(result['2026-09-30'].wash,null);assert.equal(result['2026-09-30'].sweeper,null);assert.equal(result['2026-09-30'].coffeeGroup,0);assert.equal(result['2026-10-05'].wash,'A');
+});

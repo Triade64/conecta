@@ -33,6 +33,8 @@ Quem seca passa a lavar no próximo dia programado. Se A lava e B falta, C seca;
 
 O calendário é compartilhado entre colaboradores ativos. Somente administradores ativos podem alterá-lo, com RLS no banco e controle de versão para evitar sobrescrever alterações simultâneas. Não há preenchimento automático de feriados. Atualize o calendário para consultar mudanças feitas por outra pessoa.
 
+A escala do café alterna uma turma por dia útil, com início independente em 30/09/2026: Gabriel, Gabriele, Janice e Rose; Klarice, Lucas, Simone e Vitória. Ausências não mudam automaticamente os integrantes. Em Ajustar dia, suspenda o café, selecione outra turma ou transfira as tarefas para uma data posterior.
+
 Validação do rodízio: `node --test tests/kitchen-rotation.test.cjs`.
 
 O script `global-announcements-presence.sql` configura a agenda de avisos globais, imagens privadas e presença. As imagens dos avisos são redimensionadas para WebP no navegador (até 900 KB, com limite do bucket em 1 MiB) e podem ser programadas por data. `profile-photos.sql` cria fotos privadas de perfil em WebP (até 300 KB). `chat-gif-attachments.sql` habilita GIFs animados privados de até 8 MB no chat, incluindo colagem pelo painel do Windows `Win + .`. Lembretes permanecem privados para cada usuário, inclusive para administradores.
