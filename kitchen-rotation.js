@@ -14,8 +14,7 @@
     const start = stamp(config.startDate), end = stamp(endDate);
     if ((end - start) / dayMs > 20000) throw new Error("Selecione uma data mais próxima do início da escala.");
     let dishCursor = Math.max(0, people.indexOf(config.startWasher));
-    const pairs = config.sweepPairs || [];
-    let sweepCursor = Math.max(0, Math.min(pairs.length - 1, Number(config.startSweepPair) || 0));
+    let sweepCursor = Math.max(0, people.indexOf(config.startSweeper));
     const result = {};
     for (let time = start; time <= end; time += dayMs) {
       const date = new Date(time).toISOString().slice(0, 10);
@@ -33,7 +32,7 @@
       const manual = name => people.includes(name) && !absent.has(name) ? name : null;
       const dishes = edit.dishes ?? (weekday >= 1 && weekday <= 5);
       const sweep = edit.sweep ?? (weekday === 3);
-      let wash = null, dry = null, sweepers = null, sweepPair = null;
+      let wash = null, dry = null, sweeper = null;
       if (dishes && available.length >= 2) {
         wash = manual(edit.wash) || next(dishCursor);
         dry = manual(edit.dry);
@@ -41,13 +40,11 @@
         // The person drying today is first in line to wash on the next scheduled day.
         dishCursor = people.indexOf(dry);
       }
-      if (sweep && pairs.length) {
-        sweepPair = Number.isInteger(edit.sweepPair) && edit.sweepPair >= 0 && edit.sweepPair < pairs.length ? edit.sweepPair : sweepCursor;
-        // Sweeping pairs are fixed. Absence does not replace either member or skip a pair.
-        sweepers = [...pairs[sweepPair]];
-        sweepCursor = (sweepPair + 1) % pairs.length;
+      if (sweep && available.length) {
+        sweeper = manual(edit.sweeper) || next(sweepCursor);
+        sweepCursor = (people.indexOf(sweeper) + 1) % people.length;
       }
-      result[date] = { date, dishes, sweep, wash, dry, sweepers, sweepPair, absent: [...absent], note: edit.note || "", changed: !!config.days?.[date] };
+      result[date] = { date, dishes, sweep, wash, dry, sweeper, absent: [...absent], note: edit.note || "", changed: !!config.days?.[date] };
     }
     return result;
   };
