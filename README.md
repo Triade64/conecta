@@ -23,6 +23,17 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 9. `supabase/global-announcements-presence.sql`
 10. `supabase/profile-photos.sql`
 11. `supabase/chat-gif-attachments.sql`
+12. `supabase/kitchen-calendar.sql`
+
+## Calendário do escritório
+
+Em **Calendário → Configurar rodízio**, um administrador informa os participantes (um nome por linha), a data de início e quem começa a lavar e a varrer. A lista é ordenada em português. Louça ocorre de segunda a sexta; varrição, às quartas, em um rodízio independente.
+
+Quem seca passa a lavar no próximo dia programado. Se A lava e B falta, C seca; no próximo dia, C lava e D seca. Em **Ajustar dia**, registre ausências, suspenda tarefas em feriados, altere responsáveis ou transfira tarefas para uma data posterior. Dias suspensos e dias sem pessoas suficientes não consomem vez. A transferência substitui as mesmas tarefas do destino; mudanças recalculam a sequência seguinte. Configurar a lista novamente recalcula desde a data de início, mantendo as exceções já registradas.
+
+O calendário é compartilhado entre colaboradores ativos. Somente administradores ativos podem alterá-lo, com RLS no banco e controle de versão para evitar sobrescrever alterações simultâneas. Não há preenchimento automático de feriados. Atualize o calendário para consultar mudanças feitas por outra pessoa.
+
+Validação do rodízio: `node --test tests/kitchen-rotation.test.cjs`.
 
 O script `global-announcements-presence.sql` configura a agenda de avisos globais, imagens privadas e presença. As imagens dos avisos são redimensionadas para WebP no navegador (até 900 KB, com limite do bucket em 1 MiB) e podem ser programadas por data. `profile-photos.sql` cria fotos privadas de perfil em WebP (até 300 KB). `chat-gif-attachments.sql` habilita GIFs animados privados de até 8 MB no chat, incluindo colagem pelo painel do Windows `Win + .`. Lembretes permanecem privados para cada usuário, inclusive para administradores.
 
