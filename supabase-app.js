@@ -152,7 +152,19 @@ const watchMessages = async (conversationId, callback) => {
     const visible = (data || []).filter(x => !hiddenIds.has(x.id));
     const withAttachments = await Promise.all(visible.map(async x => {
       let attachmentUrl = x.attachment_url || "";
-      if (x.attachment_path) {
+      if (x.attachment_path?.startsWith("giphy:")) {
+        const apiKey = window.conectaGifConfig?.apiKey?.trim();
+        const gifId = x.attachment_path.slice("giphy:".length);
+        if (apiKey && gifId) {
+          try {
+            const params = new URLSearchParams({ api_key: apiKey, rating: "g" });
+            const response = await fetch("https://api.giphy.com/v1/gifs/" + encodeURIComponent(gifId) + "?" + params.toString(), { cache: "no-store" });
+            if (!response.ok) throw new Error("GIPHY returned " + response.status);
+            const payload = await response.json();
+            attachmentUrl = payload.data?.images?.original?.url || "";
+          } catch (error) { console.error("Could not resolve GIPHY GIF", error); }
+        }
+      } else if (x.attachment_path) {
         const { data: signed, error: signedError } = await supabase.storage.from("chat-media").createSignedUrl(x.attachment_path, 6 * 60 * 60);
         if (signedError) console.error("Could not sign chat GIF", signedError);
         attachmentUrl = signed?.signedUrl || "";
