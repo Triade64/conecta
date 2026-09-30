@@ -72,6 +72,7 @@ set search_path = ''
 as $$
   select m.conversation_id, count(*)::bigint
   from public.messages m
+  join public.conversations c on c.id = m.conversation_id
   left join public.conversation_reads r
     on r.conversation_id = m.conversation_id
     and r.user_id = (select auth.uid())
@@ -81,6 +82,14 @@ as $$
     and not exists (
       select 1 from public.message_hidden_for h
       where h.message_id = m.id and h.user_id = (select auth.uid())
+    )
+    and (
+      (c.kind = 'channel' and (private.is_active_admin() or private.can_access_sector(c.sector)))
+      or
+      (c.kind = 'direct' and (
+        c.created_by = (select auth.uid())
+        or c.direct_recipient_id = (select auth.uid())
+      ))
     )
   group by m.conversation_id;
 $$;
