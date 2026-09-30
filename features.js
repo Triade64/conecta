@@ -594,10 +594,18 @@
     const attachRemoteGif = url => {
       try {
         const parsed = new URL(url);
-        const gifHost = /(^|\.)((media|media1|media2)\.tenor\.com|(media|i)\.giphy\.com)$/i.test(parsed.hostname);
-        if (parsed.protocol !== "https:" || (!/\.gif$/i.test(parsed.pathname) && !gifHost)) return false;
-        delete form.dataset.attachmentPath;
-        form.dataset.attachmentUrl = parsed.href;
+        const tenorHost = /(^|\.)media\d*\.tenor\.com$/i.test(parsed.hostname);
+        const giphyHost = /(^|\.)(media\d*|i)\.giphy\.com$/i.test(parsed.hostname);
+        const giphyId = parsed.pathname.match(/\/media\/([a-z0-9]+)(?:\/|$)/i)?.[1];
+        if (parsed.protocol !== "https:" || (!/\.gif$/i.test(parsed.pathname) && !tenorHost && !giphyHost)) return false;
+        if (giphyHost) {
+          if (!giphyId) return false;
+          form.dataset.attachmentPath = "giphy:" + giphyId;
+          delete form.dataset.attachmentUrl;
+        } else {
+          delete form.dataset.attachmentPath;
+          form.dataset.attachmentUrl = parsed.href;
+        }
         image.src = parsed.href;
         preview.hidden = false;
         return true;
