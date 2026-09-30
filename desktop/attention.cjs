@@ -1,5 +1,5 @@
 'use strict';
-const SITE_URL = 'https://conecta-rust.vercel.app';
+const SITE_URL = 'https://triadecontabilidade.vercel.app';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 function trustedUrl(value) {
   try { const url = new URL(value); return url.origin === SITE_URL && !url.username && !url.password; }

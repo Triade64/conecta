@@ -1,6 +1,6 @@
 # Conecta para Windows — versão de teste
 
-O aplicativo abre https://conecta-rust.vercel.app e usa a mesma conta e o mesmo banco do Conecta. A primeira execução exige login; a sessão fica no perfil local do aplicativo. As atualizações do site aparecem automaticamente no aplicativo.
+O aplicativo abre https://triadecontabilidade.vercel.app e usa a mesma conta e o mesmo banco do Conecta. A primeira execução exige login; a sessão fica no perfil local do aplicativo. As atualizações do site aparecem automaticamente no aplicativo.
 
 Ao receber uma chamada de atenção individual, o aplicativo restaura a janela, solicita foco, abre a conversa e executa o tremor já configurado no site. O Windows pode negar o foco enquanto outro programa está em uso; nesse caso, o ícone pisca na barra de tarefas.
 

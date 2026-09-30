@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const { trustedUrl, validAttentionSender, bringForward } = require('../attention.cjs');
 const id = '00000000-0000-4000-8000-000000000001';
 test('IPC accepts only the Conecta main frame and valid conversation ids', () => {
-  const frame = { url: 'https://conecta-rust.vercel.app/' }, contents = { mainFrame: frame };
+  const frame = { url: 'https://triadecontabilidade.vercel.app/' }, contents = { mainFrame: frame };
   const win = { webContents: contents, isDestroyed: () => false }, event = { sender: contents, senderFrame: frame };
   assert(validAttentionSender(event, win, id));
   assert(!validAttentionSender({ ...event, sender: {} }, win, id));
@@ -19,8 +19,8 @@ test('restore, show, raise and focus run in order with taskbar fallback', () => 
   assert(!bringForward({ isDestroyed: () => true }));
 });
 test('trusted origin rejects HTTP, deceptive domains and embedded credentials', () => {
-  assert(trustedUrl('https://conecta-rust.vercel.app/path'));
-  for (const url of ['http://conecta-rust.vercel.app','https://conecta-rust.vercel.app.evil.test','file:///C:/x','https://user@conecta-rust.vercel.app']) assert(!trustedUrl(url));
+  assert(trustedUrl('https://triadecontabilidade.vercel.app/path'));
+  for (const url of ['http://triadecontabilidade.vercel.app','https://triadecontabilidade.vercel.app.evil.test','file:///C:/x','https://user@triadecontabilidade.vercel.app']) assert(!trustedUrl(url));
 });
 test('focused non-minimized window does not restore and stops taskbar flashing', () => {
   const calls = [], win = { isDestroyed: () => false, isMinimized: () => false, isFocused: () => true };
