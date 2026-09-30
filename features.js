@@ -2,10 +2,46 @@
   const currentUserId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.uid || null;
   const currentUser = () => window.conectaFirebase?.auth?.currentUser;
   const notificationPrefsKey = () => `conecta-browser-notifications:${currentUserId() || "guest"}`;
+  const notificationSoundPrefsKey = () => `conecta-browser-notification-sound:${currentUserId() || "guest"}`;
   const browserNotificationsEnabled = () => { try { return localStorage.getItem(notificationPrefsKey()) === "true"; } catch { return false; } };
+  const browserNotificationSoundEnabled = () => { try { return localStorage.getItem(notificationSoundPrefsKey()) !== "false"; } catch { return true; } };
+  let notificationAudioContext = null;
+  const unlockNotificationAudio = async () => {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return false;
+    try {
+      notificationAudioContext ||= new AudioContextClass();
+      if (notificationAudioContext.state === "suspended") await notificationAudioContext.resume();
+      return notificationAudioContext.state === "running";
+    } catch { return false; }
+  };
+  const playNotificationSound = () => {
+    if (!browserNotificationSoundEnabled() || !notificationAudioContext || notificationAudioContext.state !== "running") return;
+    try {
+      const now = notificationAudioContext.currentTime;
+      [880, 1174].forEach((frequency, index) => {
+        const start = now + index * 0.13;
+        const oscillator = notificationAudioContext.createOscillator();
+        const volume = notificationAudioContext.createGain();
+        oscillator.type = "sine";
+        oscillator.frequency.value = frequency;
+        volume.gain.setValueAtTime(0.0001, start);
+        volume.gain.exponentialRampToValueAtTime(0.12, start + 0.015);
+        volume.gain.exponentialRampToValueAtTime(0.0001, start + 0.11);
+        oscillator.connect(volume);
+        volume.connect(notificationAudioContext.destination);
+        oscillator.start(start);
+        oscillator.stop(start + 0.12);
+      });
+    } catch (error) { console.warn("Could not play notification sound", error); }
+  };
   const showBrowserNotification = (title, body, tag) => {
     if (!browserNotificationsEnabled() || !("Notification" in window) || Notification.permission !== "granted") return false;
-    try { new Notification(title, { body, tag,  }); return true; } catch { return false; }
+    try {
+      new Notification(title, { body, tag, silent: false, icon: "./favicon.ico" });
+      playNotificationSound();
+      return true;
+    } catch { return false; }
   };
   const setProfileAvatar = (element, url, label = "") => {
     if (!element) return;
@@ -156,8 +192,7 @@
       due.forEach(item => {
         const reminderKey = `${item.id}:${item.due_at}`;
         if (sentSet.has(reminderKey)) return;
-        showBrowserNotification("Lembrete próximo do vencimento", item.title || "Um lembrete vence nas próximas 24 horas.", reminderKey);
-        sentSet.add(reminderKey);
+        if (showBrowserNotification("Lembrete próximo do vencimento", item.title || "Um lembrete vence nas próximas 24 horas.", reminderKey)) sentSet.add(reminderKey);
       });
       try { localStorage.setItem(key, JSON.stringify([...sentSet].slice(-100))); } catch {}
     }
@@ -1038,7 +1073,7 @@
       ["Setor", profile.sector || "—"],
       ["Acesso", roleNames[profile.role] || "Colaborador"]
     ];
-    panel.innerHTML = '<div class="view-toolbar"><div><h2>Meu perfil</h2><p>Confira os dados da sua conta e atualize sua senha de acesso.</p></div></div><div class="profile-grid"><section class="card"><div class="card-head"><div><div class="card-title">Dados da conta</div><div class="card-sub">Informações vinculadas ao seu usuário.</div></div></div><div class="profile-photo-area"><img class="profile-photo-preview" id="profilePhotoPreview" alt="Foto do perfil" src="" style="display:none"><div class="profile-photo-preview" id="profilePhotoFallback"></div><div class="profile-photo-controls"><label class="text-btn" for="profilePhotoInput">Escolher foto</label><input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><small>JPG, PNG ou WEBP. A imagem é ajustada e otimizada automaticamente.</small><div class="profile-feedback" id="profilePhotoFeedback" role="status" aria-live="polite"></div></div></div><dl class="profile-details">' + values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") + '</dl></section><section class="card"><div class="card-head"><div><div class="card-title">Notificações</div><div class="card-sub">Novas mensagens e lembretes com vencimento nas próximas 24 horas.</div></div></div><div class="notification-setting"><button class="primary" id="browserNotificationToggle" type="button">Ativar notificações no navegador</button><small id="browserNotificationStatus" role="status"></small></div></section><section class="card"><div class="card-head"><div><div class="card-title">Trocar senha</div><div class="card-sub">Use a senha atual para definir uma nova.</div></div></div><form class="password-form" id="profilePasswordForm"><div class="field"><label for="profileCurrentPassword">Senha atual</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="profileNewPassword">Nova senha</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small>Use pelo menos 8 caracteres.</small></div><div class="field"><label for="profileConfirmPassword">Confirme a nova senha</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div><div class="field profile-reauth-field" id="profileReauthField" hidden><label for="profileReauthCode">Código enviado ao seu e-mail</label><input id="profileReauthCode" name="nonce" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Digite o código de confirmação"></div><div class="profile-feedback" id="passwordChangeFeedback" role="status" aria-live="polite"></div><div class="profile-form-actions"><button class="primary" type="submit">Salvar nova senha</button></div></form></section></div>';
+    panel.innerHTML = '<div class="view-toolbar"><div><h2>Meu perfil</h2><p>Confira os dados da sua conta e atualize sua senha de acesso.</p></div></div><div class="profile-grid"><section class="card"><div class="card-head"><div><div class="card-title">Dados da conta</div><div class="card-sub">Informações vinculadas ao seu usuário.</div></div></div><div class="profile-photo-area"><img class="profile-photo-preview" id="profilePhotoPreview" alt="Foto do perfil" src="" style="display:none"><div class="profile-photo-preview" id="profilePhotoFallback"></div><div class="profile-photo-controls"><label class="text-btn" for="profilePhotoInput">Escolher foto</label><input id="profilePhotoInput" type="file" accept="image/jpeg,image/png,image/webp" hidden><small>JPG, PNG ou WEBP. A imagem é ajustada e otimizada automaticamente.</small><div class="profile-feedback" id="profilePhotoFeedback" role="status" aria-live="polite"></div></div></div><dl class="profile-details">' + values.map(([label, value]) => `<div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`).join("") + '</dl></section><section class="card"><div class="card-head"><div><div class="card-title">Notificações</div><div class="card-sub">Novas mensagens e lembretes com vencimento nas próximas 24 horas.</div></div></div><div class="notification-setting"><button class="primary" id="browserNotificationToggle" type="button">Ativar notificações no navegador</button><label class="notification-sound-option"><input id="browserNotificationSound" type="checkbox" checked><span>Reproduzir aviso sonoro para mensagens e lembretes</span></label><small>O som também depende de o Windows permitir notificações e áudio para o navegador.</small><small id="browserNotificationStatus" role="status"></small></div></section><section class="card"><div class="card-head"><div><div class="card-title">Trocar senha</div><div class="card-sub">Use a senha atual para definir uma nova.</div></div></div><form class="password-form" id="profilePasswordForm"><div class="field"><label for="profileCurrentPassword">Senha atual</label><input id="profileCurrentPassword" name="currentPassword" type="password" autocomplete="current-password" required></div><div class="field"><label for="profileNewPassword">Nova senha</label><input id="profileNewPassword" name="newPassword" type="password" autocomplete="new-password" minlength="8" required><small>Use pelo menos 8 caracteres.</small></div><div class="field"><label for="profileConfirmPassword">Confirme a nova senha</label><input id="profileConfirmPassword" name="confirmPassword" type="password" autocomplete="new-password" minlength="8" required></div><div class="field profile-reauth-field" id="profileReauthField" hidden><label for="profileReauthCode">Código enviado ao seu e-mail</label><input id="profileReauthCode" name="nonce" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="12" placeholder="Digite o código de confirmação"></div><div class="profile-feedback" id="passwordChangeFeedback" role="status" aria-live="polite"></div><div class="profile-form-actions"><button class="primary" type="submit">Salvar nova senha</button></div></form></section></div>';
     const photoPreview = byId("profilePhotoPreview");
     const photoFallback = byId("profilePhotoFallback");
     const profileName = profile.name || user.user_metadata?.name || user.email || "?";
@@ -1069,21 +1104,27 @@
       } finally { input.value = ""; }
     });
     const notificationButton = byId("browserNotificationToggle");
+    const notificationSoundToggle = byId("browserNotificationSound");
     const notificationStatus = byId("browserNotificationStatus");
+    notificationSoundToggle.checked = browserNotificationSoundEnabled();
+    notificationSoundToggle.addEventListener("change", () => {
+      try { localStorage.setItem(notificationSoundPrefsKey(), String(notificationSoundToggle.checked)); } catch {}
+    });
     const refreshNotificationUi = () => {
       const supported = "Notification" in window;
       notificationButton.disabled = !supported;
-      notificationButton.textContent = browserNotificationsEnabled() ? "Desativar notificações" : "Ativar notificações no navegador";
+      notificationButton.textContent = browserNotificationsEnabled() ? "Desativar notificações" : "Ativar notificações no Windows";
       notificationStatus.textContent = !supported
-        ? "Este navegador não oferece notificações."
+        ? "Este navegador não oferece notificações do sistema."
         : Notification.permission === "denied"
           ? "As notificações estão bloqueadas nas configurações do navegador."
           : browserNotificationsEnabled()
-            ? "Ativas para novas mensagens e lembretes próximos."
-            : "Os avisos dentro do aplicativo continuam ativos.";
+            ? `Ativas para mensagens e lembretes; som ${browserNotificationSoundEnabled() ? "ativado" : "desativado"}.`
+            : "Ative para receber avisos na central de notificações do Windows.";
     };
     refreshNotificationUi();
     notificationButton?.addEventListener("click", async () => {
+      await unlockNotificationAudio();
       if (browserNotificationsEnabled()) {
         try { localStorage.removeItem(notificationPrefsKey()); } catch {}
         refreshNotificationUi();
@@ -1092,10 +1133,14 @@
       if (!("Notification" in window)) return;
       const permission = Notification.permission === "granted" ? "granted" : await Notification.requestPermission();
       if (permission === "granted") {
-        try { localStorage.setItem(notificationPrefsKey(), "true"); } catch {}
+        try {
+          localStorage.setItem(notificationPrefsKey(), "true");
+          if (localStorage.getItem(notificationSoundPrefsKey()) === null) localStorage.setItem(notificationSoundPrefsKey(), "true");
+        } catch {}
+        notificationSoundToggle.checked = browserNotificationSoundEnabled();
         refreshNotificationUi();
-        showToast("Notificações ativadas.");
-      } else notificationStatus.textContent = "Permissão não concedida. Confira as configurações do navegador.";
+        showToast("Notificações do Windows ativadas.");
+      } else notificationStatus.textContent = "Permissão não concedida. Autorize as notificações para este site no navegador.";
     });
   };
 
