@@ -5,11 +5,11 @@
   const notificationSoundPrefsKey = () => `conecta-browser-notification-sound:${currentUserId() || "guest"}`;
   const browserNotificationsEnabled = () => { try { return localStorage.getItem(notificationPrefsKey()) === "true"; } catch { return false; } };
   const browserNotificationSoundEnabled = () => { try { return localStorage.getItem(notificationSoundPrefsKey()) !== "false"; } catch { return true; } };
-  const showBrowserNotification = (title, body, tag, allowWhenDisabled = false) => {
+  const showBrowserNotification = (title, body, tag, allowWhenDisabled = false, onClick = null) => {
     if ((!allowWhenDisabled && !browserNotificationsEnabled()) || !("Notification" in window) || Notification.permission !== "granted") return false;
     try {
       const notification = new Notification(title, { body, tag, silent: !browserNotificationSoundEnabled() });
-      notification.onclick = () => { window.focus(); notification.close(); };
+      notification.onclick = () => { window.focus(); notification.close(); if (onClick) onClick(); };
       return true;
     } catch (error) {
       console.warn("Could not show system notification", error);
@@ -80,6 +80,12 @@
       setTimeout(() => findAndFocus(30), 100);
     }
     renderConversations();
+  };
+  window.conectaOpenNudgeConversation = conversationId => {
+    const index = contacts.findIndex(item => item.firestoreId === conversationId && item.kind === "direct");
+    if (index < 0) return false;
+    openConversationFromSearch(index);
+    return true;
   };
   const renderGlobalSearch = async query => {
     const request = ++globalSearchRequest;
@@ -364,7 +370,8 @@
     const body = detail.isNudge
       ? `${detail.authorName || "Um colaborador"} chamou sua atenção!`
       : `${detail.authorName || "Um colaborador"} enviou uma mensagem em ${detail.conversationName || "uma conversa"}.`;
-    const shown = showBrowserNotification(detail.isNudge ? "Chamou sua atenção!" : "Nova mensagem", body, `message-${detail.id}`);
+    const shown = showBrowserNotification(detail.isNudge ? "Chamou sua atenção!" : "Nova mensagem", body, `message-${detail.id}`, false,
+      detail.isNudge ? () => window.conectaRevealNudge?.(detail) : null);
     if (!shown && document.visibilityState === "visible") showToast(body);
   });
   window.addEventListener("conecta-profile-photo-sync", event => {
