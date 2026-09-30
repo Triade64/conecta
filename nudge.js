@@ -86,6 +86,12 @@
     if (!detail.isNudge || detail.conversationKind !== "direct" || !detail.id || detail.authorId === userId() || seen.has(detail.id)) return;
     seen.add(detail.id);
     if (seen.size > 200) seen.delete(seen.values().next().value);
+    if (window.conectaDesktop?.requestAttention) {
+      window.conectaRevealNudge(detail);
+      Promise.resolve(window.conectaDesktop.requestAttention(detail.conversationId))
+        .then(revealPending).catch(error => console.warn("Desktop attention unavailable", error));
+      return;
+    }
     if (document.visibilityState !== "visible") {
       window.conectaRevealNudge(detail);
       return;
