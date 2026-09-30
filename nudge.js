@@ -1,9 +1,10 @@
 (() => {
   const NUDGE_TEXT = "🔔 Chamou sua atenção!";
-  const COOLDOWN_MS = 30000;
+  const COOLDOWN_MS = 15000;
   const seen = new Set();
   const cooldowns = new Map();
   let lastShake = 0;
+  let pendingNudge = null;
   const userId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.id;
   const key = conversationId => "conecta-nudge:" + userId() + ":" + conversationId;
   const lastSent = id => {
@@ -57,11 +58,7 @@
   document.head.append(style);
   const previous = renderConversations;
   renderConversations = window.renderConversations = (...args) => { previous(...args); installButton(); };
-  window.addEventListener("conecta-incoming-message-notification", event => {
-    const detail = event.detail || {};
-    if (!detail.isNudge || detail.conversationKind !== "direct" || !detail.id || detail.authorId === userId() || seen.has(detail.id)) return;
-    seen.add(detail.id);
-    if (seen.size > 200) seen.delete(seen.values().next().value);
+  const shake = () => {
     if (document.visibilityState !== "visible" || Date.now() - lastShake < 10000 || window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
     const area = document.querySelector(".main");
     if (!area?.animate) return;
@@ -71,8 +68,32 @@
       { transform: "translateX(8px)" }, { transform: "translateX(-6px)" },
       { transform: "translateX(6px)" }, { transform: "translateX(-3px)" },
       { transform: "translateX(3px)" }, { transform: "translateX(0)" }
-    ], { duration: 550, easing: "ease-in-out" });
+    ], { duration: 1000, easing: "ease-in-out" });
+  };
+  const revealPending = () => {
+    if (!pendingNudge || document.visibilityState !== "visible") return;
+    if (!window.conectaOpenNudgeConversation?.(pendingNudge.conversationId)) return;
+    pendingNudge = null;
+    shake();
+  };
+  window.conectaRevealNudge = detail => {
+    if (!detail?.isNudge || detail.conversationKind !== "direct" || !detail.conversationId || detail.authorId === userId()) return;
+    pendingNudge = { conversationId: detail.conversationId, receivedAt: Date.now() };
+    revealPending();
+  };
+  window.addEventListener("conecta-incoming-message-notification", event => {
+    const detail = event.detail || {};
+    if (!detail.isNudge || detail.conversationKind !== "direct" || !detail.id || detail.authorId === userId() || seen.has(detail.id)) return;
+    seen.add(detail.id);
+    if (seen.size > 200) seen.delete(seen.values().next().value);
+    if (document.visibilityState !== "visible") {
+      window.conectaRevealNudge(detail);
+      return;
+    }
+    shake();
   });
-  window.addEventListener("conecta-auth-session-reset", () => { seen.clear(); cooldowns.clear(); lastShake = 0; });
+  document.addEventListener("visibilitychange", revealPending);
+  window.addEventListener("conecta-conversations-sync", revealPending);
+  window.addEventListener("conecta-auth-session-reset", () => { seen.clear(); cooldowns.clear(); lastShake = 0; pendingNudge = null; });
   installButton();
 })();
