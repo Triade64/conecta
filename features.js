@@ -417,7 +417,7 @@
         editedAt: message.editedAt || message.edited_at || null,
         deletedAt: message.deletedAt || message.deleted_at || null
       }));
-      renderConversations(undefined, false);
+      if (contacts[selectedContact]?.firestoreId === conversation.firestoreId && byId("viewPanel")?.classList.contains("show")) renderConversations(undefined, false);
     });
   };
 
@@ -971,6 +971,7 @@
       uploadedFile = null;
       if (pendingFiles.get(conversation.firestoreId) === pending) clearPendingFile(conversation.firestoreId);
       conversation.replyTarget = null;
+      window.conectaDrafts?.clear(conversation.firestoreId);
       input.replaceChildren();
       input.querySelectorAll("img").forEach(image => image.remove());
       delete form.dataset.attachmentPath;
@@ -992,7 +993,9 @@
 
   const baseRenderConversations = renderConversations;
   renderConversations = window.renderConversations = (filter, watch = true) => {
+    const draftState = window.conectaDrafts?.beforeRender(contacts[selectedContact]?.firestoreId);
     baseRenderConversations(filter, watch);
+    window.conectaDrafts?.retain(draftState);
     updateUnreadBadges();
     const conversation = contacts[selectedContact];
     addEmojiPicker(conversation || {});
@@ -1177,6 +1180,7 @@
       chat.insertBefore(preview, composer);
     }
     box.scrollTop = box.scrollHeight;
+    window.conectaDrafts?.afterRender(conversation.firestoreId, draftState);
   };
 
   window.addEventListener("conecta-firebase-ready", () => {
@@ -1451,12 +1455,15 @@
   // Keep the selected conversation stable when activity reorders the list.
   window.addEventListener("conecta-conversations-sync", event => {
     const selectedConversationId = contacts[selectedContact]?.firestoreId;
+    const previous = new Map(contacts.map(c => [c.firestoreId, c]));
+    const signature = list => JSON.stringify(list.map(c => [c.firestoreId,c.name,c.type,c.snippet,c.unreadCount,c.avatar_url]));
+    const before = signature(contacts);
     contacts = (event.detail || []).filter(c => c.kind === "channel" || c.kind === "direct")
       .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
-      .map(c => ({ ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda", messages: [] }));
+      .map(c => Object.assign(previous.get(c.id) || { messages: [], replyTarget: null }, { ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda" }));
     const selectedIndex = contacts.findIndex(c => c.firestoreId === selectedConversationId);
     selectedContact = selectedIndex >= 0 ? selectedIndex : 0;
-    if (byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Conversas") renderConversations();
+    if (before !== signature(contacts) && byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Conversas") renderConversations();
     renderDashboardConversations();
   });
 
