@@ -1,0 +1,79 @@
+/* Fill the viewport; long records scroll inside their own panel. */
+html,body{height:100%;margin:0}
+body:has(.app.authenticated){overflow:hidden}
+.app.authenticated{height:100vh;height:100dvh;min-height:0;grid-template-columns:clamp(220px,14vw,252px) minmax(0,1fr);overflow:hidden}
+.main{display:flex;flex-direction:column;min-height:0;min-width:0;overflow:hidden}
+.topbar{height:clamp(54px,7.5vh,78px);flex:none;padding-inline:clamp(16px,2vw,40px);gap:12px}
+.topbar .top-actions{min-width:0}
+.breadcrumbs{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.content{width:100%;max-width:none;margin:0;flex:1;min-height:0;min-width:0;padding:clamp(12px,2vh,28px) clamp(14px,2vw,40px);display:flex;flex-direction:column;overflow:hidden;gap:clamp(8px,1.5vh,18px)}
+.sidebar{min-height:0;min-width:0;gap:clamp(10px,2.5vh,28px);padding:clamp(14px,2.6vh,28px) clamp(10px,1vw,18px);overflow:auto}
+.sidebar>*{flex-shrink:0}
+.sidebar .nav-label{margin-bottom:-4px}
+.sidebar .profile{padding-top:clamp(8px,1.6vh,19px)}
+.brand{min-width:0;gap:8px;padding-inline:0}.brand-logo{min-width:0;max-width:126px;flex:1 1 auto}.brand-product{flex:none;padding-left:7px}
+.profile-info{flex:1;min-width:0;font-size:12px}.profile-info span,.profile-info small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sidebar .avatar,.conv-item .person{flex-shrink:0}
+.sidebar .nav button{padding-block:clamp(7px,1.2vh,11px)}
+.sidebar .channel{padding-block:clamp(5px,1vh,9px)}
+.back-dashboard.show{flex:none;align-self:flex-start;min-height:0;margin:0;padding-block:3px}
+.view-panel.show{flex:1;min-height:0;min-width:0;display:flex;flex-direction:column;gap:clamp(8px,1.5vh,18px);overflow:auto}
+.view-panel.show>*{flex-shrink:0}
+.view-toolbar{flex:none;margin:0;gap:12px}
+.view-toolbar>div{min-width:0}
+.view-toolbar h2{font-size:clamp(18px,1.4vw,22px)}
+.view-panel:has(.conversation-layout){overflow:hidden}
+.conversation-layout{flex:1 1 0;min-height:0;height:auto;max-height:none;grid-template-columns:clamp(210px,20vw,320px) minmax(0,1fr);grid-template-rows:minmax(0,1fr);overflow:hidden}
+.conversation-list{min-height:0;min-width:0;overflow:auto}
+.conv-item{min-width:0;align-items:center}
+.conversation-chat{height:100%;min-width:0;min-height:0;overflow:hidden}
+.chat-head,.composer,.chat-file-preview,.chat-gif-preview,.reply-compose-preview{flex-shrink:0}
+.chat-head{padding:clamp(10px,1.8vh,17px) clamp(12px,1.5vw,20px)}
+.chat-messages{flex:1;min-height:0;min-width:0;scrollbar-gutter:auto;padding:clamp(10px,2vh,20px)}
+.composer{min-width:0;align-items:center;padding:clamp(8px,1.3vh,13px)}
+.composer .chat-rich-input,.composer input{min-width:0;max-height:min(130px,18vh)}
+.chat-file-preview img,.chat-gif-preview img{max-height:9vh}
+.welcome{flex:none;margin:0;gap:12px}
+.welcome h1{margin:4px 0;font-size:clamp(21px,2vw,27px)}
+.stats{flex:none;margin:0;grid-template-columns:repeat(4,minmax(0,1fr));gap:clamp(8px,1vw,15px)}
+.stat{min-width:0;padding:clamp(10px,1.6vh,17px) clamp(10px,1.2vw,18px)}
+.stat strong{margin-top:5px}
+.content>.grid{flex:1;min-height:0;align-items:stretch;grid-template-columns:minmax(0,1.45fr) minmax(0,.85fr)}
+.content>.grid>.card,.right-col>.card{display:flex;flex-direction:column;min-height:0}
+.card-head{flex:none;padding:clamp(10px,1.8vh,19px) clamp(12px,1.5vw,21px)}
+.feed,.reminders,.chat-preview{min-height:0;overflow:auto}
+.right-col{min-height:0;grid-template-rows:repeat(2,minmax(0,1fr));gap:clamp(8px,1.5vh,17px)}
+.profile-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(10px,1.5vw,18px)}
+.profile-grid>*{min-width:0}
+.view-panel:has(.kitchen-grid){overflow:hidden}
+.kitchen-toolbar{flex:none;margin:0}
+.view-panel>.kitchen-help{flex:none;margin:0;font-size:12px;line-height:1.4}
+.kitchen-grid{flex:1 1 0;min-height:0;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:auto;grid-auto-rows:minmax(0,1fr);gap:clamp(3px,.6vw,8px)}
+.kitchen-weekday{padding:3px}
+.kitchen-day{min-height:0;min-width:0;padding:clamp(5px,.6vw,10px);overflow:auto;border-radius:8px}
+.kitchen-day time{margin-bottom:3px}
+.kitchen-task{font-size:clamp(10px,.72vw,12px);line-height:1.35}
+.kitchen-note{margin-top:3px;font-size:10px}
+.kitchen-day button{margin-top:3px}
+/* Keep wheel, touch and keyboard navigation without persistent scrollbars. */
+.sidebar,.view-panel,.conversation-list,.chat-messages,.feed,.reminders,.chat-preview,.kitchen-day{scrollbar-width:none}
+.sidebar::-webkit-scrollbar,.view-panel::-webkit-scrollbar,.conversation-list::-webkit-scrollbar,.chat-messages::-webkit-scrollbar,.feed::-webkit-scrollbar,.reminders::-webkit-scrollbar,.chat-preview::-webkit-scrollbar,.kitchen-day::-webkit-scrollbar{display:none}
+.modal{max-height:calc(100dvh - 36px);overflow:auto}
+@media(max-height:720px) and (min-width:761px){
+ .sidebar{gap:10px;padding-block:12px}.workspace{padding:8px 10px}.brand{padding:0 4px}.sidebar .nav button{padding-block:6px}.sidebar .channel{padding-block:4px}
+ .content{gap:8px;padding-block:10px}.view-panel.show{gap:8px}.view-toolbar p{margin-top:3px}.welcome p{font-size:12px}.stat-icon{width:24px;height:24px}.stat strong{font-size:21px}.stat{padding-block:9px}
+ .kitchen-task{font-size:10px;line-height:1.2}.kitchen-day{padding:4px}.kitchen-day time{font-size:11px}.kitchen-day button{font-size:10px;padding:2px 0}
+}
+@media(min-width:761px) and (max-width:1150px){.profile-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.top-actions{gap:8px}.search.global-search{width:clamp(170px,25vw,280px);min-width:0}}
+@media(max-width:760px){
+ .app.authenticated{display:flex;flex-direction:column}.main{flex:1}.sidebar{height:100dvh}
+ .topbar{height:58px;padding-inline:12px}.content{padding:10px 12px max(10px,env(safe-area-inset-bottom));gap:8px}
+ .view-toolbar{flex-direction:row;align-items:center;gap:8px}.view-toolbar .primary{min-height:36px;padding:8px;font-size:11px}.view-toolbar p{font-size:11px}.back-dashboard{min-height:0}
+ .conversation-layout{grid-template-columns:minmax(0,1fr);grid-template-rows:68px minmax(0,1fr);height:auto;min-height:0;max-height:none}
+ .conversation-list{display:flex;flex-direction:row;overflow-x:auto;overflow-y:hidden}.conv-item{flex:0 0 170px;min-width:170px;padding:6px}.chat-head{padding:9px 12px}
+ .composer{flex-wrap:wrap;gap:5px}.composer .chat-rich-input,.composer input{flex:1 0 100%;font-size:14px}.composer .primary{margin-left:auto;min-height:36px;min-width:64px;padding:8px}
+ .welcome{flex-direction:row;align-items:center}.welcome .primary{width:auto;min-height:36px}.welcome h1{font-size:20px}.welcome p{font-size:11px}
+ .stats{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}.stat{padding:8px}.stat strong{font-size:18px}.stat small{font-size:9px}
+ .content>.grid{grid-template-columns:1fr;grid-template-rows:minmax(0,1fr) minmax(0,1fr);gap:8px}.right-col{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:minmax(0,1fr)}
+ .profile-grid{grid-template-columns:1fr}.kitchen-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;overflow:auto;grid-auto-rows:auto}.kitchen-weekday,.kitchen-pad{display:block}.kitchen-day time{display:block}.kitchen-task{font-size:10px}.kitchen-day{overflow:visible}.kitchen-toolbar{gap:6px}.kitchen-month-nav h3{min-width:130px;font-size:14px}
+}
