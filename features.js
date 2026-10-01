@@ -1361,13 +1361,14 @@
     };
   };
 
-  // Replace the legacy channel-only view with the RLS-filtered channel + 1:1 list.
+  // Keep the selected conversation stable when activity reorders the list.
   window.addEventListener("conecta-conversations-sync", event => {
-    const people = window.conectaDirectory || [];
+    const selectedConversationId = contacts[selectedContact]?.firestoreId;
     contacts = (event.detail || []).filter(c => c.kind === "channel" || c.kind === "direct")
       .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
       .map(c => ({ ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda", messages: [] }));
-    if (selectedContact >= contacts.length) selectedContact = 0;
+    const selectedIndex = contacts.findIndex(c => c.firestoreId === selectedConversationId);
+    selectedContact = selectedIndex >= 0 ? selectedIndex : 0;
     if (byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Conversas") renderConversations();
     renderDashboardConversations();
   });
