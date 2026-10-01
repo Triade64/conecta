@@ -1045,12 +1045,31 @@
         if (message.attachmentUrl || message.attachmentName) {
           const time = bubble.querySelector("small"); bubble.replaceChildren();
           const isImage = !message.attachmentName || ["image/jpeg","image/png","image/gif","image/webp"].includes(message.attachmentMime);
+          const previewAttachment = () => window.conectaAttachmentPreview?.({ url: message.attachmentUrl, name: message.attachmentName, mime: message.attachmentMime, size: message.attachmentSize });
           if (message.attachmentUrl && isImage) {
-            const image = document.createElement("img"); image.className = "message-attachment"; image.alt = message.attachmentName || "GIF animado"; image.loading = "lazy"; image.src = message.attachmentUrl; bubble.append(image);
+            const image = document.createElement("img"); image.className = "message-attachment"; image.alt = message.attachmentName || "GIF animado"; image.loading = "lazy"; image.src = message.attachmentUrl;
+            if (message.attachmentName) { image.classList.add("previewable"); image.tabIndex = 0; image.setAttribute("role","button"); image.setAttribute("aria-label","Ampliar " + message.attachmentName); image.onclick = previewAttachment; image.onkeydown = event => { if (["Enter"," "].includes(event.key)) { event.preventDefault(); previewAttachment(); } }; }
+            bubble.append(image);
           }
           if (message.attachmentName) {
             if (message.attachmentUrl) {
-              const link = document.createElement("a"); link.className = "message-file-link"; link.href = message.attachmentUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.download = message.attachmentName; link.textContent = "📎 " + message.attachmentName + " · Baixar"; bubble.append(link);
+              const previewButton = document.createElement("button"); previewButton.type = "button"; previewButton.className = "attachment-preview-open"; previewButton.textContent = "Prévia"; previewButton.onclick = previewAttachment; bubble.append(previewButton);
+              const link = document.createElement("a"); link.className = "message-file-link"; link.href = message.attachmentUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.download = message.attachmentName; link.textContent = "📎 " + message.attachmentName + " · Baixar";
+              if (typeof window.conectaDesktop?.download === "function") {
+                let downloading = false;
+                link.addEventListener("click", async event => {
+                  event.preventDefault();
+                  if (downloading) return;
+                  downloading = true; const original = link.textContent; link.textContent = "Baixando…"; link.setAttribute("aria-busy","true");
+                  try {
+                    const result = await window.conectaDesktop.download({ url: message.attachmentUrl, name: message.attachmentName });
+                    if (result?.ok) showToast("Arquivo salvo: " + (result.name || message.attachmentName));
+                    else if (!result?.cancelled) showToast(result?.error || "Não foi possível baixar o anexo.");
+                  } catch { showToast("Não foi possível baixar o anexo. Tente novamente."); }
+                  finally { downloading = false; link.textContent = original; link.removeAttribute("aria-busy"); }
+                });
+              }
+              bubble.append(link);
               const size = document.createElement("span"); size.className = "message-file-size"; size.textContent = window.conectaAttachments.formatSize(Number(message.attachmentSize)); bubble.append(size);
             } else { const unavailable = document.createElement("span"); unavailable.textContent = "📎 " + message.attachmentName + " · Anexo indisponível. Recarregue a conversa para tentar novamente."; bubble.append(unavailable); }
           }

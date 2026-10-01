@@ -31,5 +31,5 @@ test('preload exposes only attention and notification capabilities', () => {
   const vm = require('node:vm'), fs = require('node:fs'), calls = []; let exposed;
   const electron = {contextBridge:{exposeInMainWorld:(name,api)=>{assert.equal(name,'conectaDesktop');exposed=api;}},ipcRenderer:{invoke:(...args)=>{calls.push(args);return Promise.resolve({ok:true});}}};
   vm.runInNewContext(fs.readFileSync(require.resolve('../preload.cjs'),'utf8'),{require:name=>{assert.equal(name,'electron');return electron;}});
-  assert.deepEqual(Object.keys(exposed),['requestAttention','notify','onNotificationClick']);exposed.requestAttention(id);assert.deepEqual(calls,[['conecta:attention',id]]);
+  assert.deepEqual(Object.keys(exposed),['requestAttention','notify','download','onNotificationClick']);exposed.requestAttention(id);assert.deepEqual(calls,[['conecta:attention',id]]);
 });

@@ -3,6 +3,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('conectaDesktop', Object.freeze({
   requestAttention: conversationId => ipcRenderer.invoke('conecta:attention', conversationId),
   notify: payload => ipcRenderer.invoke('conecta:notify', payload),
+  download: payload => ipcRenderer.invoke('conecta:download', payload),
   onNotificationClick: callback => {
     if (typeof callback !== 'function') return;
     const listener = (_event, tag) => { if (typeof tag === 'string') callback(tag); };

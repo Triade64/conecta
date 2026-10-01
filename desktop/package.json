@@ -1,6 +1,6 @@
 {
   "name": "conecta-desktop",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "private": true,
   "description": "Conecta da Tríade para Windows",
   "author": "Tríade",
@@ -24,6 +24,7 @@
       "attention.cjs",
       "notifications.cjs",
       "updater.cjs",
+      "downloads.cjs",
       "assets/*",
       "package.json"
     ],

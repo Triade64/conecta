@@ -9,7 +9,13 @@
     return { name: String(file.name).slice(0,255), mime: types[extension], size: file.size, extension };
   }
   const formatSize = size => size >= 1024 * 1024 ? (size / 1024 / 1024).toFixed(1) + ' MB' : Math.max(1,Math.ceil(size / 1024)) + ' KB';
-  const api = Object.freeze({ validate, formatSize, accept: Object.keys(types).map(x=>'.'+x).join(','), maxSize });
+  function previewUrl(value) {
+    const url = new URL(value);
+    if (url.origin !== 'https://fmyenjfzdwizpgretpkk.supabase.co' || url.username || url.password || !url.pathname.startsWith('/storage/v1/object/sign/chat-files/') || !url.searchParams.get('token')) throw Error('A prévia deste anexo não está disponível.');
+    url.searchParams.delete('download');
+    return url.href;
+  }
+  const api = Object.freeze({ validate, formatSize, previewUrl, accept: Object.keys(types).map(x=>'.'+x).join(','), maxSize });
   if (typeof module === 'object' && module.exports) module.exports = api;
   else root.conectaAttachments = api;
 })(globalThis);

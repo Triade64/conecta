@@ -33,3 +33,5 @@ A versão 0.1.2 envia mensagens e lembretes pela API nativa do Windows. Em Meu p
 Use Conecta → Verificar atualizações ou a mesma opção no ícone perto do relógio. O aplicativo também verifica ao abrir e a cada quatro horas. Ele pede autorização para baixar e depois para reiniciar e instalar. Fechar pelo X mantém o aplicativo na bandeja; uma atualização baixada só é instalada ao escolher Reiniciar e instalar.
 
 A versão 0.1.2 é a primeira com atualização integrada e precisa ser instalada uma vez. As próximas versões são publicadas em GitHub Releases com o instalador, blockmap e latest.yml. Para publicar uma nova versão nativa, aumente a versão em desktop/package.json e atualize package-lock.json antes do push. O workflow preserva releases já publicadas; mudanças do site aparecem ao recarregar a conversa.
+
+A versão 0.1.3 baixa anexos nativamente pelo aplicativo, com a janela Salvar e indicação de progresso na barra de tarefas. Somente URLs assinadas de anexos do projeto Conecta são aceitas; links externos continuam abrindo no navegador. Arquivos salvos não são executados automaticamente. Atualize em Conecta → Verificar atualizações.

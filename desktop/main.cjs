@@ -5,6 +5,7 @@ const { SITE_URL, trustedUrl, validSender, validAttentionSender, bringForward } 
 const { notificationOptions, showNativeNotification } = require('./notifications.cjs');
 const { autoUpdater } = require('electron-updater');
 const { createUpdater } = require('./updater.cjs');
+const { createDownloads } = require('./downloads.cjs');
 const activeNotifications = new Map();
 let mainWindow, tray, quitting = false, lastAttention = 0;
 app.setAppUserModelId('br.com.triade.conecta');
@@ -29,6 +30,11 @@ async function createWindow() {
       contextIsolation: true, sandbox: true, webSecurity: true, backgroundThrottling: false }
   });
   const contents = mainWindow.webContents;
+  const downloads = createDownloads({ contents, session: contents.session, getWindow: () => mainWindow, downloadsPath: app.getPath('downloads') });
+  ipcMain.handle('conecta:download', (event, payload) => {
+    if (!validSender(event, mainWindow)) return { ok: false, error: 'Origem não autorizada.' };
+    return downloads.download(payload);
+  });
   contents.session.setPermissionRequestHandler((webContents, permission, callback, details) => {
     callback(webContents === contents && permission === 'notifications' && trustedUrl(details.requestingUrl || webContents.getURL()));
   });

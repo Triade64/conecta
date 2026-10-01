@@ -27,3 +27,9 @@ test('file-only sends include metadata; existing text and GIF call signatures st
  await object.sendMessage({id:'author'},'conversation','Olá');assert.equal(inserts[1].text,'Olá');assert(!('attachment_name' in inserts[1]));
  await object.sendMessage({id:'author'},'conversation','',null,'giphy:123');assert.equal(updates[2].last_message,'GIF');
 });
+
+test('preview keeps the signed token, removes download disposition and rejects other origins',()=>{
+ const url='https://fmyenjfzdwizpgretpkk.supabase.co/storage/v1/object/sign/chat-files/path.pdf?token=signed&download=arquivo.pdf';
+ const preview=new URL(api.previewUrl(url));assert.equal(preview.searchParams.get('token'),'signed');assert(!preview.searchParams.has('download'));
+ for(const value of ['javascript:alert(1)',url.replace('fmyenjfzdwizpgretpkk.supabase.co','evil.test'),url.replace('chat-files','other'),url.replace('token=signed','token=')])assert.throws(()=>api.previewUrl(value));
+});
