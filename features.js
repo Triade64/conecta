@@ -887,6 +887,48 @@
     input.setAttribute("spellcheck", "false");
     input.title = "Use Windows + . e escolha um GIF; depois cole-o nesta conversa.";
   };
+  const pendingFiles = new Map();
+  const sendingConversations = new Set();
+  const clearPendingFile = id => { const pending = pendingFiles.get(id); if (pending?.url) URL.revokeObjectURL(pending.url); pendingFiles.delete(id); };
+  window.addEventListener("conecta-auth-session-reset", () => { for (const id of pendingFiles.keys()) clearPendingFile(id); });
+  const fileStyle = document.createElement("style");
+  fileStyle.textContent = ".attach-file-button{flex:0 0 auto;border:1px solid #dfe5dc;border-radius:8px;background:#fff;padding:7px 9px;font-size:18px;cursor:pointer}.chat-file-preview{display:flex;align-items:center;gap:12px;padding:10px 12px;border-top:1px solid var(--line);overflow-wrap:anywhere}.chat-file-preview[hidden]{display:none!important}.chat-file-preview img{width:70px;height:70px;object-fit:contain;border-radius:8px}.chat-file-preview button{margin-left:auto;border:0;background:transparent;color:#315b3c;cursor:pointer}.message-file-link{display:block;padding:9px 0;color:inherit;font-weight:650;overflow-wrap:anywhere}.message-file-size{font-size:11px;font-weight:400}";
+  document.head.append(fileStyle);
+  const bindFileAttachments = conversation => {
+    const form = byId("composer"), input = byId("chatInput"), id = conversation.firestoreId;
+    if (!form || !input || !id || form.querySelector(".attach-file-button")) return;
+    const picker = document.createElement("input"); picker.type = "file"; picker.accept = window.conectaAttachments.accept; picker.hidden = true;
+    const button = document.createElement("button"); button.type = "button"; button.className = "attach-file-button"; button.textContent = "📎"; button.title = "Anexar arquivo ou imagem (até 20 MB)"; button.setAttribute("aria-label",button.title);
+    const preview = document.createElement("div"); preview.className = "chat-file-preview"; preview.hidden = true; preview.setAttribute("role","status");
+    const showPreview = () => {
+      const pending = pendingFiles.get(id); preview.replaceChildren(); preview.hidden = !pending;
+      button.disabled = sendingConversations.has(id);
+      input.contentEditable = sendingConversations.has(id) ? "false" : "true";
+      const gifButton = form.querySelector(".gif-picker-toggle"); if (gifButton) gifButton.disabled = !!pending || sendingConversations.has(id);
+      const sendButton = form.querySelector('button[type="submit"]'); if (sendButton) sendButton.disabled = sendingConversations.has(id);
+      if (!pending) return;
+      if (pending.url) { const img = document.createElement("img"); img.src = pending.url; img.alt = "Prévia do anexo"; preview.append(img); }
+      const label = document.createElement("span"); label.textContent = pending.info.name + " · " + window.conectaAttachments.formatSize(pending.info.size); preview.append(label);
+      const remove = document.createElement("button"); remove.type = "button"; remove.textContent = "Remover anexo"; remove.disabled = sendingConversations.has(id); remove.onclick = () => { clearPendingFile(id); showPreview(); }; preview.append(remove);
+    };
+    const selectFile = file => {
+      if (sendingConversations.has(id) || form.dataset.gifUploading === "true") { showToast("Aguarde o envio terminar."); return; }
+      try {
+        const info = window.conectaAttachments.validate(file); clearPendingFile(id);
+        pendingFiles.set(id,{ file, info, url: info.mime.startsWith("image/") ? URL.createObjectURL(file) : null });
+        delete form.dataset.attachmentPath; delete form.dataset.attachmentUrl;
+        form.parentElement.querySelector(".chat-gif-preview")?.querySelector("button")?.click();
+        showPreview(); input.focus();
+      } catch (error) { showError(error); }
+    };
+    button.onclick = () => picker.click(); picker.onchange = () => { if (picker.files[0]) selectFile(picker.files[0]); picker.value = ""; };
+    input.addEventListener("paste", event => {
+      const file = [...(event.clipboardData?.files || [])].find(file => file.type.startsWith("image/") && file.type !== "image/gif");
+      if (file) { event.preventDefault(); event.stopImmediatePropagation(); selectFile(file); }
+      else if (pendingFiles.has(id) && [...(event.clipboardData?.files || [])].some(file => file.type === "image/gif")) { event.preventDefault(); event.stopImmediatePropagation(); showToast("Remova o anexo antes de selecionar um GIF."); }
+    }, true);
+    form.insertBefore(button,form.querySelector('button[type="submit"]')); form.append(picker); form.before(preview); form.__refreshAttachmentState = showPreview; showPreview();
+  };
   document.addEventListener("submit", async event => {
     const form = event.target;
     if (form?.id !== "composer") return;
@@ -896,6 +938,9 @@
     const user = currentUser();
     const input = byId("chatInput");
     const text = getChatDraftText(input);
+    const pending = pendingFiles.get(conversation?.firestoreId);
+    if (sendingConversations.has(conversation?.firestoreId)) return;
+    let uploadedFile = null;
     let attachmentPath = form.dataset.attachmentPath || null;
     let attachmentUrl = form.dataset.attachmentUrl || null;
     const inlineGif = input.querySelector("img[src]");
@@ -912,22 +957,37 @@
       } catch (error) { showError(error); return; }
     }
     if (form.dataset.gifUploading === "true") { showToast("Aguarde o GIF terminar de anexar."); return; }
-    if (!conversation?.firestoreId || !user || (!text && !attachmentPath && !attachmentUrl)) return;
+    if (!conversation?.firestoreId || !user || (!text && !attachmentPath && !attachmentUrl && !pending)) return;
+    sendingConversations.add(conversation.firestoreId);
+    form.__refreshAttachmentState?.();
     const button = form.querySelector('button[type="submit"]');
     if (button) { button.disabled = true; button.textContent = "Enviando…"; }
     try {
-      await window.conectaFirebase.sendMessage(user, conversation.firestoreId, text, conversation.replyTarget?.id || null, attachmentPath, attachmentUrl);
+      if (pending) {
+        uploadedFile = await window.conectaFirebase.uploadChatFile(user, conversation.firestoreId, pending.file);
+        attachmentPath = uploadedFile.path; attachmentUrl = null;
+      }
+      await window.conectaFirebase.sendMessage(user, conversation.firestoreId, text, conversation.replyTarget?.id || null, attachmentPath, attachmentUrl, uploadedFile?.info || null);
+      uploadedFile = null;
+      if (pendingFiles.get(conversation.firestoreId) === pending) clearPendingFile(conversation.firestoreId);
       conversation.replyTarget = null;
       input.replaceChildren();
-      document.querySelectorAll(".chat-rich-input img").forEach(image => image.remove());
+      input.querySelectorAll("img").forEach(image => image.remove());
       delete form.dataset.attachmentPath;
       delete form.dataset.attachmentUrl;
       const preview = document.querySelector(".chat-gif-preview");
       if (preview) preview.hidden = true;
       await refreshMessages(conversation);
       showToast("Mensagem enviada.");
-    } catch (error) { showError(error); }
-    finally { if (button) { button.disabled = false; button.textContent = "Enviar"; } }
+    } catch (error) {
+      if (uploadedFile) await window.conectaFirebase.removePendingChatFile(uploadedFile.path).catch(() => {});
+      showError(error);
+    }
+    finally {
+      sendingConversations.delete(conversation.firestoreId);
+      if (button) { button.disabled = false; button.textContent = "Enviar"; }
+      if (contacts[selectedContact]?.firestoreId === conversation.firestoreId) byId("composer")?.__refreshAttachmentState?.();
+    }
   }, true);
 
   const baseRenderConversations = renderConversations;
@@ -937,6 +997,7 @@
     const conversation = contacts[selectedContact];
     addEmojiPicker(conversation || {});
     bindGifPaste(conversation || {});
+    bindFileAttachments(conversation || {});
     document.querySelectorAll(".conversation-list .conv-item").forEach(button => {
       const item = contacts[Number(button.dataset.contact)];
       const avatar = button.querySelector(".person");
@@ -957,6 +1018,9 @@
         editedAt: source.editedAt || source.edited_at || message.editedAt,
         deletedAt: source.deletedAt || source.deleted_at || message.deletedAt,
         attachmentUrl: source.attachmentUrl || source.attachment_url || message.attachmentUrl || "",
+        attachmentName: source.attachment_name || message.attachmentName || "",
+        attachmentMime: source.attachment_mime || message.attachmentMime || "",
+        attachmentSize: source.attachment_size || message.attachmentSize || 0,
         mine: (source.authorId || source.author_id || message.authorId) === currentUserId()
       };
     });
@@ -978,15 +1042,19 @@
         time.textContent = message.time || "";
         bubble.append(time);
       } else {
-        if (message.attachmentUrl) {
-          const attachment = document.createElement("img");
-          attachment.className = "message-attachment";
-          attachment.alt = "GIF animado";
-          attachment.loading = "lazy";
-          attachment.src = message.attachmentUrl;
-          const time = bubble.querySelector("small");
-          bubble.replaceChildren(attachment);
-          if (message.text && message.text !== "GIF") bubble.append(document.createTextNode(message.text));
+        if (message.attachmentUrl || message.attachmentName) {
+          const time = bubble.querySelector("small"); bubble.replaceChildren();
+          const isImage = !message.attachmentName || ["image/jpeg","image/png","image/gif","image/webp"].includes(message.attachmentMime);
+          if (message.attachmentUrl && isImage) {
+            const image = document.createElement("img"); image.className = "message-attachment"; image.alt = message.attachmentName || "GIF animado"; image.loading = "lazy"; image.src = message.attachmentUrl; bubble.append(image);
+          }
+          if (message.attachmentName) {
+            if (message.attachmentUrl) {
+              const link = document.createElement("a"); link.className = "message-file-link"; link.href = message.attachmentUrl; link.target = "_blank"; link.rel = "noopener noreferrer"; link.download = message.attachmentName; link.textContent = "📎 " + message.attachmentName + " · Baixar"; bubble.append(link);
+              const size = document.createElement("span"); size.className = "message-file-size"; size.textContent = window.conectaAttachments.formatSize(Number(message.attachmentSize)); bubble.append(size);
+            } else { const unavailable = document.createElement("span"); unavailable.textContent = "📎 " + message.attachmentName + " · Anexo indisponível. Recarregue a conversa para tentar novamente."; bubble.append(unavailable); }
+          }
+          if (message.text && message.text !== "GIF") bubble.append(document.createElement("br"),document.createTextNode(message.text));
           if (time) bubble.append(time);
         }
         if (message.editedAt) {

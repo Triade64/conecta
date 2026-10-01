@@ -177,6 +177,13 @@ const watchMessages = async (conversationId, callback) => {
       let attachmentUrl = x.attachment_url || "";
       if (x.attachment_path?.startsWith("giphy:")) {
         attachmentUrl = giphyUrls.get(x.attachment_path.slice("giphy:".length)) || "";
+      } else if (x.attachment_path?.startsWith("file:")) {
+        if (!x.deleted_at) {
+          const path = x.attachment_path.slice(5);
+          const { data: signed, error: signedError } = await supabase.storage.from("chat-files").createSignedUrl(path, 6 * 60 * 60, { download: x.attachment_name || "anexo" });
+          if (signedError) console.warn("Attachment URL unavailable", signedError);
+          attachmentUrl = signed?.signedUrl || "";
+        }
       } else if (x.attachment_path) {
         const { data: signed, error: signedError } = await supabase.storage.from("chat-media").createSignedUrl(x.attachment_path, 6 * 60 * 60);
         if (signedError) console.error("Could not sign chat GIF", signedError);
@@ -238,6 +245,17 @@ window.conectaFirebase = {
     dispatch("conecta-profile-photo-sync", { id: user.id, avatar_url: avatarUrl });
     await loadData(user);
     return avatarUrl;
+  },
+  uploadChatFile: async (user, conversationId, file) => {
+    if (!user?.id || !conversationId) throw new Error("Entre e selecione uma conversa.");
+    const info = window.conectaAttachments.validate(file);
+    const path = `${user.id}/${conversationId}/${crypto.randomUUID()}.${info.extension}`;
+    const { error } = await supabase.storage.from("chat-files").upload(path, file, { contentType: info.mime, upsert: false });
+    if (error) throw error;
+    return { path: "file:" + path, info };
+  },
+  removePendingChatFile: async path => {
+    if (path?.startsWith("file:")) await supabase.storage.from("chat-files").remove([path.slice(5)]);
   },
   uploadChatGif: async (user, file) => {
     if (!user?.id || file?.type !== "image/gif") throw new Error("Cole um arquivo GIF animado.");
@@ -395,14 +413,15 @@ window.conectaFirebase = {
     if (error) throw error;
     return data || [];
   },
-  sendMessage: async (user, conversationId, text, replyTo = null, attachmentPath = null, attachmentUrl = null) => {
+  sendMessage: async (user, conversationId, text, replyTo = null, attachmentPath = null, attachmentUrl = null, attachmentInfo = null) => {
     const { error } = await supabase.from("messages").insert({
       conversation_id: conversationId, text: text || "", author_id: user.id, reply_to: replyTo,
-      attachment_path: attachmentPath, attachment_url: attachmentUrl
+      attachment_path: attachmentPath, attachment_url: attachmentUrl,
+      ...(attachmentInfo ? { attachment_name: attachmentInfo.name, attachment_mime: attachmentInfo.mime, attachment_size: attachmentInfo.size } : {})
     });
     if (error) throw error;
-    const { error: updateError } = await supabase.from("conversations").update({ updated_at: new Date().toISOString(), last_message: text || (attachmentPath || attachmentUrl ? "GIF" : "") }).eq("id", conversationId);
-    if (updateError) throw updateError;
+    const { error: updateError } = await supabase.from("conversations").update({ updated_at: new Date().toISOString(), last_message: text || (attachmentInfo?.name ? "📎 " + attachmentInfo.name : attachmentPath || attachmentUrl ? "GIF" : "") }).eq("id", conversationId);
+    if (updateError) console.warn("Conversation preview update failed", updateError);
   }
 };
 
