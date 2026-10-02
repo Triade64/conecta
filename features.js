@@ -1119,6 +1119,7 @@
         event.stopPropagation();
         document.querySelectorAll(".message-action-menu").forEach(item => { if (item !== menu) item.hidden = true; });
         menu.hidden = !menu.hidden;
+        if (!menu.hidden) window.conectaPositionMessageMenu?.(menu, toggle, box);
       });
       const menuAction = (label, action, danger = false) => {
         const button = document.createElement("button");
