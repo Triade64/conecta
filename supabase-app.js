@@ -113,12 +113,18 @@ function startDataSync(user) {
   const announcementScheduleTimer = window.setInterval(() => loadData(user), 60_000);
   const liveChannel = supabase.channel("conecta-presence", { config: { private: true, presence: { key: user.id } } })
     .on("presence", { event: "sync" }, () => {
-      dispatch("conecta-online-count-sync", Object.keys(liveChannel.presenceState()).length);
+      if (presenceChannel !== liveChannel) return;
+      const userIds = Object.entries(liveChannel.presenceState()).filter(([,sessions]) => sessions.length > 0).map(([id]) => id);
+      dispatch("conecta-online-count-sync", userIds.length);
+      dispatch("conecta-presence-sync", { userIds, ready: true });
     })
     .subscribe(async status => {
       if (status === "SUBSCRIBED") {
-        const { error } = await liveChannel.track({ userId: user.id });
-        if (error) console.error("Could not publish team presence", error);
+        const result = await liveChannel.track({ userId: user.id });
+        if (result !== "ok") console.error("Could not publish team presence", result);
+      } else if (["CHANNEL_ERROR", "TIMED_OUT", "CLOSED"].includes(status) && presenceChannel === liveChannel) {
+        dispatch("conecta-online-count-sync", 0);
+        dispatch("conecta-presence-sync", { userIds: [], ready: false });
       }
     });
   presenceChannel = liveChannel;
@@ -128,6 +134,7 @@ function startDataSync(user) {
     if (presenceChannel === liveChannel) presenceChannel = null;
     supabase.removeChannel(liveChannel);
     dispatch("conecta-online-count-sync", 0);
+    dispatch("conecta-presence-sync", { userIds: [], ready: false });
     messageWatchGeneration++;
     const messageChannel = activeMessageChannel;
     activeMessageChannel = null;
