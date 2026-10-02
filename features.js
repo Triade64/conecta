@@ -435,7 +435,8 @@
         const channels = allowedSectors().map(sector => `<option value="channel:${escapeHtml(sector)}">${escapeHtml(sector)}</option>`).join("");
         destination.innerHTML = `<option value="" disabled selected>Selecione um destino</option><optgroup label="Conversa individual">${people || '<option disabled>Nenhum colaborador disponível</option>'}</optgroup><optgroup label="Canais permitidos">${channels}</optgroup>`;
       }
-      byId("modalDesc").textContent = "Inicie uma conversa individual com qualquer colaborador ou envie ao canal do seu setor.";
+      if (destination) window.conectaRecipients?.mount(destination);
+      byId("modalDesc").textContent = "Selecione os destinatários. Cada pessoa receberá o mesmo texto na conversa individual.";
     }
   };
 
@@ -1708,30 +1709,51 @@
         showToast("Lembrete salvo.");
       } else if (type === "message") {
         const user = currentUser();
-        const destination = byId("destination").value;
+        if (form.dataset.bulkSending === "true") return;
+        const select = byId("destination");
+        const destinations = [...new Set([...select.selectedOptions].map(option => option.value).filter(Boolean))];
         const text = byId("message").value.trim();
-        if (!user || !text || !destination) throw new Error("Escolha um destino e escreva a mensagem.");
-        let conversationId;
-        if (destination.startsWith("user:")) {
-          const personId = destination.slice(5);
-          conversationId = await fb.startDirectConversation(user, personId);
-        } else if (destination.startsWith("channel:")) {
-          conversationId = await fb.ensureChannel(user, destination.slice(8));
-        } else {
-          throw new Error("Destino inválido.");
+        if (!user || !text || !destinations.length) throw new Error("Selecione ao menos um destinatário e escreva a mensagem.");
+        if (destinations.some(value => !value.startsWith("user:") && !value.startsWith("channel:"))) throw new Error("Destino inválido.");
+        form.dataset.bulkSending = "true";
+        const submit = form.querySelector('button[type="submit"],button:not([type])');
+        const cancel = byId("cancelBtn");
+        const originalLabel = submit?.textContent;
+        let conversationId, sent = 0;
+        const failed = [];
+        select.disabled = true;byId("message").disabled = true;
+        if (submit) {submit.disabled = true;submit.textContent = "Enviando…";}
+        if (cancel) cancel.disabled = true;
+        window.conectaRecipients?.refresh();
+        try {
+          for (const destination of destinations) {
+            try {
+              const id = destination.startsWith("user:")
+                ? await fb.startDirectConversation(user, destination.slice(5))
+                : await fb.ensureChannel(user, destination.slice(8));
+              await fb.sendMessage(user, id, text);
+              conversationId = id;sent++;
+              for (const option of select.options) if (option.value === destination) option.selected = false;
+            } catch (error) { console.error("Could not send to recipient", error);failed.push(destination); }
+          }
+        } finally {
+          delete form.dataset.bulkSending;
+          select.disabled = false;byId("message").disabled = false;
+          if (submit) {submit.disabled = false;submit.textContent = originalLabel;}
+          if (cancel) cancel.disabled = false;
+          window.conectaRecipients?.refresh();
         }
-        await fb.sendMessage(user, conversationId, text);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        const conversation = contacts.find(item => item.firestoreId === conversationId);
+        if (failed.length) {
+          showToast(`Enviada para ${sent} destinatário(s). ${failed.length} envio(s) falharam; tente novamente apenas para os selecionados.`);
+          return;
+        }
         byId("modalBack").classList.remove("show");
-        showDashboard();
-        renderView("Conversas");
-        const refreshedConversation = contacts.find(item => item.firestoreId === conversationId) || conversation;
-        if (refreshedConversation) {
-          selectedContact = contacts.indexOf(refreshedConversation);
-          renderConversations();
+        if (destinations.length === 1) {
+          renderView("Conversas");
+          const index = contacts.findIndex(item => item.firestoreId === conversationId);
+          if (index >= 0) {selectedContact = index;renderConversations();}
         }
-        showToast("Mensagem enviada.");
+        showToast(`Mensagem enviada para ${sent} destinatário(s).`);
         delete form.dataset.featureAction;
         return;
       } else return;

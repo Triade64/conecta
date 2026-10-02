@@ -20,7 +20,7 @@
     if (!select) return;
     const group = [...select.querySelectorAll('optgroup')].find(g => g.label === 'Conversa individual');
     if (!group) return;
-    const selected = select.value;
+    const selected = new Set([...select.selectedOptions].map(option=>option.value));
     const options = new Map([...group.querySelectorAll('option')].map(o=>[o.value,o]));
     for (const person of people()) {
       const option = options.get('user:'+person.id);if (!option) continue;
@@ -28,7 +28,8 @@
       if (option.textContent !== label) option.textContent = label;
       group.append(option);
     }
-    select.value = selected;
+    for (const option of select.options) option.selected = selected.has(option.value);
+    window.conectaRecipients?.refresh();
   };
   const renderPeople = () => {
     if (!dialog?.open) return;
@@ -45,7 +46,7 @@
         const conversation = typeof contacts !== 'undefined' ? contacts.find(c=>c.kind==='direct' && c.directUserId===person.id) : null;
         if (conversation && window.conectaOpenNudgeConversation?.(conversation.firestoreId)) return;
         window.openModal('message');
-        const destination = document.getElementById('destination');if (destination) destination.value = 'user:'+person.id;
+        const destination = document.getElementById('destination');if (destination) { destination.value = 'user:'+person.id; destination.dispatchEvent(new Event('change')); }
         document.getElementById('message')?.focus();
       };
       list.append(button);
