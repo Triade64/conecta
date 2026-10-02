@@ -93,6 +93,12 @@
     }
     renderConversations();
   };
+  window.conectaOpenFavoriteConversation = (conversationId, messageId) => {
+    const index = contacts.findIndex(item => item.firestoreId === conversationId);
+    if (index < 0) return false;
+    openConversationFromSearch(index, messageId);
+    return true;
+  };
   window.conectaOpenNudgeConversation = conversationId => {
     const index = contacts.findIndex(item => item.firestoreId === conversationId && item.kind === "direct");
     if (index < 0) return false;

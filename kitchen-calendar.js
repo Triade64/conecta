@@ -17,6 +17,7 @@
     const { data, error } = await db().from('kitchen_calendar').select('*').eq('id', true).single();
     if (error) throw new Error('Não foi possível carregar a escala. Confira sua conexão e tente atualizar.');
     record = data;
+    window.dispatchEvent(new CustomEvent("conecta-kitchen-config-sync", { detail: data }));
   };
   const save = async (config, expectedVersion) => {
     if (!admin()) throw new Error('Somente administradores podem alterar a escala.');
@@ -26,6 +27,7 @@
     if (error) throw new Error('Não foi possível salvar. Confira sua conexão e tente novamente.');
     if (!data) { await load(); throw new Error('Outra pessoa atualizou a escala. Feche esta janela, atualize o calendário e refaça a alteração.'); }
     record = data;
+    window.dispatchEvent(new CustomEvent("conecta-kitchen-config-sync", { detail: data }));
   };
   const options = (people, selected = '', automatic = false) => (automatic ? '<option value="">Automático</option>' : '') + people.map(p => `<option value="${esc(p)}" ${p === selected ? 'selected' : ''}>${esc(p)}</option>`).join('');
   const modal = (title, content, onSubmit) => {

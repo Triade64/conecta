@@ -2,7 +2,7 @@
   let online = new Set(), ready = false, dialog = null;
   const currentId = () => window.conectaCurrentUser?.id || window.conectaFirebase?.auth?.currentUser?.id || window.conectaFirebase?.auth?.currentUser?.uid;
   const people = () => (window.conectaDirectory || []).filter(p => p.id !== currentId()).slice().sort((a,b) => Number(online.has(b.id)) - Number(online.has(a.id)) || (a.name || '').localeCompare(b.name || '', 'pt-BR'));
-  const status = id => !ready ? 'Verificando…' : online.has(id) ? 'Online' : 'Offline';
+  const status = id => { const connection = !ready ? 'Verificando…' : online.has(id) ? 'Online' : 'Offline'; return window.conectaTeamStatus ? connection + ' · ' + window.conectaTeamStatus.describe(id) : connection; };
   const style = document.createElement('style');
   style.textContent = '.presence-badge{display:inline-flex;align-items:center;gap:4px;font-size:10px;font-weight:500;white-space:nowrap;color:#7a8179}.presence-badge::before{content:"";width:7px;height:7px;border-radius:50%;background:#a5aaa3}.presence-badge.is-online{color:#287246}.presence-badge.is-online::before{background:#32a566}.chat-head>.presence-badge{margin-top:5px}.presence-team-button{white-space:nowrap}.presence-dialog{width:min(480px,calc(100vw - 28px));max-height:85dvh;border:1px solid var(--line);border-radius:16px;padding:20px;color:var(--ink);overflow:auto}.presence-dialog::backdrop{background:#17251b99}.presence-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:12px}.presence-dialog h2{font-size:19px;margin:0}.presence-dialog p{color:var(--muted);font-size:12px}.presence-person{width:100%;display:flex;align-items:center;gap:12px;padding:12px 6px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;color:inherit;font:inherit}.presence-person:hover{background:#eef3ed}.presence-person-info{flex:1;min-width:0}.presence-person-info strong,.presence-person-info small{display:block;overflow-wrap:anywhere}.presence-person-info small{font-size:11px;color:var(--muted);margin-top:4px}.presence-person .presence-badge{font-size:12px}.conv-item .chat-name{flex-wrap:wrap}.view-toolbar:has(.presence-team-button){flex-wrap:wrap}';
   document.head.append(style);
@@ -13,6 +13,7 @@
     const label = status(id), klass = 'presence-badge' + (ready && online.has(id) ? ' is-online' : '');
     if (node.textContent !== label) node.textContent = label;
     if (node.className !== klass) node.className = klass;
+    node.dataset.status = window.conectaTeamStatus?.code(id) || 'available';
     node.title = ready ? 'Conexão no Conecta: '+label : 'Aguardando conexão com a equipe';
   };
   const updateDestinations = () => {
@@ -80,6 +81,7 @@
   new MutationObserver(records=>{if(records.some(r=>[...r.addedNodes].some(n=>n.nodeType===1 && (n.matches('.conv-item,.conversation-chat,.view-toolbar,#destination') || n.querySelector('.conv-item,.conversation-chat,.view-toolbar,#destination')))))schedule();}).observe(document.body,{childList:true,subtree:true});
   window.addEventListener('conecta-presence-sync',event=>{online=new Set(event.detail?.userIds || []);ready=!!event.detail?.ready;schedule();});
   window.addEventListener('conecta-directory-sync',schedule);
+  window.addEventListener('conecta-team-status-sync',schedule);
   window.addEventListener('conecta-auth-session-reset',()=>{online.clear();ready=false;dialog?.close();schedule();});
   paint();
 })();

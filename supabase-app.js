@@ -10,6 +10,7 @@ let activeMessageChannel = null;
 let messageWatchGeneration = 0;
 let presenceChannel = null;
 let activeAuthUserId = null;
+let personalDataGeneration = 0;
 const profilePhotoUrlCache = new Map();
 
 const dispatch = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
@@ -48,7 +49,27 @@ async function withProfilePhotoUrls(rows = []) {
   return new Map(entries);
 }
 
+async function loadPersonalData(user) {
+  const generation = ++personalDataGeneration;
+  const results = await Promise.all([
+    supabase.from("team_status").select("user_id,status,note,updated_at"),
+    supabase.from("message_favorites").select("message_id,created_at,message:messages(id,conversation_id,text,author_id,author_name,created_at,deleted_at,attachment_name,attachment_path)").eq("user_id", user.id).order("created_at", { ascending: false }),
+    supabase.from("kitchen_calendar").select("config,version").eq("id", true).maybeSingle(),
+    supabase.from("message_hidden_for").select("message_id").eq("user_id", user.id)
+  ]);
+  if (window.conectaCurrentUser?.id !== user.id || generation !== personalDataGeneration) return;
+  const [statuses, favorites, calendar, hidden] = results;
+  if (!statuses.error) dispatch("conecta-team-status-sync", statuses.data || []);
+  if (!favorites.error && !hidden.error) {
+    const excluded = new Set((hidden.data || []).map(row => row.message_id));
+    dispatch("conecta-favorites-sync", (favorites.data || []).filter(row => row.message && !excluded.has(row.message_id)));
+  }
+  if (!calendar.error) dispatch("conecta-kitchen-config-sync", calendar.data);
+  if (results.some(result => result.error)) console.warn("Could not refresh personal features", results.filter(result => result.error).map(result => result.error));
+}
+
 async function loadData(user) {
+  void loadPersonalData(user).catch(error => console.warn("Personal features refresh failed", error));
   const profile = await ensureUserProfile(user);
   // Reminders are private to their creator, including for administrator accounts.
   const remindersQuery = supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false });
@@ -109,7 +130,7 @@ async function dispatchIncomingMessageNotification(payload, user) {
 function startDataSync(user) {
   stopDataSync();
   loadData(user);
-  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "global_announcements" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => dispatchIncomingMessageNotification(payload, user)).subscribe();
+  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "global_announcements" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "team_status" }, () => loadPersonalData(user)).on("postgres_changes", { event: "*", schema: "public", table: "message_favorites", filter: "user_id=eq." + user.id }, () => loadPersonalData(user)).on("postgres_changes", { event: "*", schema: "public", table: "kitchen_calendar" }, () => loadPersonalData(user)).on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + user.id }, () => loadPersonalData(user)).on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => dispatchIncomingMessageNotification(payload, user)).subscribe();
   const announcementScheduleTimer = window.setInterval(() => loadData(user), 60_000);
   const liveChannel = supabase.channel("conecta-presence", { config: { private: true, presence: { key: user.id } } })
     .on("presence", { event: "sync" }, () => {
@@ -233,6 +254,21 @@ const authCompat = {
 };
 
 window.conectaFirebase = {
+  loadPersonalData,
+  setTeamStatus: async (user, status, note = "") => {
+    if (!["available", "busy", "meeting", "away"].includes(status) || note.length > 80) throw new Error("Status inválido.");
+    const { error } = await supabase.from("team_status").upsert({ user_id: user.id, status, note: note.trim(), updated_at: new Date().toISOString() });
+    if (error) throw error;
+    await loadPersonalData(user);
+  },
+  setMessageFavorite: async (user, messageId, favorite) => {
+    const query = favorite
+      ? supabase.from("message_favorites").upsert({ user_id: user.id, message_id: messageId }, { onConflict: "user_id,message_id", ignoreDuplicates: true })
+      : supabase.from("message_favorites").delete().eq("user_id", user.id).eq("message_id", messageId);
+    const { error } = await query;
+    if (error) throw error;
+    await loadPersonalData(user);
+  },
   app: supabase, auth: authCompat, db: supabase, config: { projectId: "fmyenjfzdwizpgretpkk" },
   signInWithEmailAndPassword: (_auth, email, password) => supabase.auth.signInWithPassword({ email, password }),
   sendPasswordResetEmail: (_auth, email) => supabase.auth.resetPasswordForEmail(email, { redirectTo: location.origin }),
@@ -437,7 +473,7 @@ window.conectaFirebase = {
 
 supabase.auth.onAuthStateChange(async (_event, session) => {
   const user = session?.user;
-  if (activeAuthUserId !== (user?.id || null)) dispatch("conecta-auth-session-reset");
+  if (activeAuthUserId !== (user?.id || null)) { personalDataGeneration++; dispatch("conecta-auth-session-reset"); }
   activeAuthUserId = user?.id || null;
   window.conectaCurrentUser = user || null;
   document.querySelector("#authScreen")?.classList.toggle("visible", !user);
