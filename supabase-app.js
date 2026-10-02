@@ -143,6 +143,12 @@ function startDataSync(user) {
   };
 }
 
+const loadReadReceipts = async conversationId => {
+  const { data, error } = await supabase.from("conversation_reads").select("user_id,last_read_at").eq("conversation_id", conversationId);
+  if (error) { console.warn("Could not load read receipts", error); return; }
+  dispatch("conecta-read-receipts-sync", { conversationId, reads: data || [] });
+};
+
 const watchMessages = async (conversationId, callback) => {
   const generation = ++messageWatchGeneration;
   const previousChannel = activeMessageChannel;
@@ -200,14 +206,7 @@ const watchMessages = async (conversationId, callback) => {
     }));
     if (generation !== messageWatchGeneration) return;
     callback(withAttachments);
-    if (userId && generation === messageWatchGeneration) {
-      const { error: readError } = await supabase.from("conversation_reads").upsert({ conversation_id: conversationId, user_id: userId, last_read_at: new Date().toISOString() }, { onConflict: "conversation_id,user_id" });
-      if (readError) console.error("Could not mark conversation as read", readError);
-      else {
-        const { data: unread, error: unreadError } = await supabase.rpc("get_unread_counts");
-        if (!unreadError && generation === messageWatchGeneration) dispatch("conecta-unread-sync", Object.fromEntries((unread || []).map(row => [row.conversation_id, Number(row.unread_count) || 0])));
-      }
-    }
+
   };
   try { await refresh(); } catch (error) { console.error("Could not load conversation messages", error); return; }
   if (generation !== messageWatchGeneration) return;
@@ -215,7 +214,9 @@ const watchMessages = async (conversationId, callback) => {
   const channel = supabase.channel("messages-" + conversationId)
     .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: "conversation_id=eq." + conversationId }, refreshSafely)
     .on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + userId }, refreshSafely)
-    .subscribe();
+    .on("postgres_changes", { event: "*", schema: "public", table: "conversation_reads", filter: "conversation_id=eq." + conversationId }, () => loadReadReceipts(conversationId))
+    .subscribe(status => { if (status === "SUBSCRIBED") void loadReadReceipts(conversationId); });
+  void loadReadReceipts(conversationId);
   activeMessageChannel = channel;
   stopMessageSync = () => {
     if (activeMessageChannel !== channel) return;
@@ -400,8 +401,10 @@ window.conectaFirebase = {
     await loadData(user);
     return data;
   },
-  markConversationRead: async (user, conversationId) => {
-    const { error } = await supabase.from("conversation_reads").upsert({ conversation_id: conversationId, user_id: user.id, last_read_at: new Date().toISOString() }, { onConflict: "conversation_id,user_id" });
+  loadReadReceipts,
+  markConversationRead: async (user, conversationId, seenAt) => {
+    if (!user?.id || !seenAt) return;
+    const { error } = await supabase.rpc("mark_conversation_seen", { p_conversation_id: conversationId, p_seen_at: seenAt });
     if (error) throw error;
     const { data, error: unreadError } = await supabase.rpc("get_unread_counts");
     if (unreadError) throw unreadError;

@@ -1039,6 +1039,8 @@
       if (avatar && photo) setProfileAvatar(avatar, photo, message.authorName || "Foto do colaborador");
       if (!message || !bubble || !stack) return;
       bubble.dataset.messageId = message.id || "";
+      bubble.dataset.createdAt = raw[index]?.created_at || raw[index]?.createdAt || message.createdAt || "";
+      bubble.dataset.deleted = String(!!message.deletedAt);
       if (message.deletedAt) {
         bubble.replaceChildren(document.createTextNode("Mensagem apagada"));
         const time = document.createElement("small");
