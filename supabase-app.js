@@ -111,10 +111,14 @@ async function dispatchIncomingMessageNotification(payload, user) {
   if (!message?.id || !message.author_id || message.author_id === user.id) return;
   const { data: visibleMessage, error } = await supabase.from("messages").select("id,conversation_id,author_id,text,deleted_at").eq("id", message.id).maybeSingle();
   if (error || !visibleMessage || visibleMessage.deleted_at || visibleMessage.author_id === user.id) return;
-  const [{ data: conversation }, { data: directory }] = await Promise.all([
-    supabase.from("conversations").select("name,kind").eq("id", visibleMessage.conversation_id).maybeSingle(),
+  const [{ data: conversation, error: conversationError }, { data: directory }] = await Promise.all([
+    supabase.from("conversations").select("name,kind,created_by,direct_recipient_id").eq("id", visibleMessage.conversation_id).maybeSingle(),
     supabase.rpc("list_team_directory")
   ]);
+  if (window.conectaCurrentUser?.id !== user.id || conversationError || !conversation) return;
+  // Administrator read access for moderation does not make them a chat participant.
+  if (conversation.kind === "direct" && conversation.created_by !== user.id && conversation.direct_recipient_id !== user.id) return;
+  if (!["direct", "channel"].includes(conversation.kind)) return;
   const author = (directory || []).find(person => person.id === visibleMessage.author_id);
   dispatch("conecta-incoming-message-notification", {
     id: visibleMessage.id,
