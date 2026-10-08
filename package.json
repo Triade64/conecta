@@ -1,0 +1,12 @@
+{
+  "name": "conecta",
+  "private": true,
+  "version": "1.0.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "build": "node scripts/build.cjs",
+    "test:config": "node --test tests/environment-config.test.cjs"
+  }
+}

@@ -1,2 +1,2 @@
-// Chave pública de cliente do GIPHY. O arquivo é servido ao navegador; não use chaves secretas aqui.
-window.conectaGifConfig = { apiKey: "cM486w7Nc9qKXcz3V2XO51edOIT5qibq" };
+// Apenas configuração pública do cliente. Segredos não entram no site.
+window.conectaGifConfig = { apiKey: window.conectaConfig?.giphyApiKey || "" };
