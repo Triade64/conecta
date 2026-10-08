@@ -21,6 +21,8 @@
       const form = document.getElementById('composer'); save(form);
       if (!form || form.dataset.draftUserId !== userId() || form.dataset.draftConversationId !== id || !id) return null;
       const chat = form.closest('.conversation-chat'), messages = chat?.querySelector('.chat-messages');
+      // A hidden conversation has no usable scroll position when reopened.
+      if (!messages || !messages.getClientRects().length || messages.clientHeight === 0) return null;
       const selection = window.getSelection(), focused = document.activeElement;
       const range = selection?.rangeCount && form.contains(selection.anchorNode) ? {anchor:selection.anchorNode,anchorOffset:selection.anchorOffset,focus:selection.focusNode,focusOffset:selection.focusOffset} : null;
       return {chat,focused:chat?.contains(focused) ? focused : null,range,scrollTop:messages?.scrollTop || 0,atBottom:!messages || messages.scrollHeight - messages.clientHeight - messages.scrollTop < 40};
@@ -49,7 +51,14 @@
         if (state.range?.anchor.isConnected && state.range?.focus.isConnected) { window.getSelection().setBaseAndExtent(state.range.anchor,state.range.anchorOffset,state.range.focus,state.range.focusOffset); }
       }
       const messages = document.getElementById('chatMessages');
-      if (messages && state && !state.atBottom) messages.scrollTop = state.scrollTop;
+      if (!messages) return;
+      if (state && !state.atBottom) { messages.scrollTop = state.scrollTop; return; }
+      // Opening/reopening a conversation follows the latest messages after layout settles.
+      messages.scrollTop = messages.scrollHeight;
+      const expectedTop = messages.scrollTop;
+      window.requestAnimationFrame(() => {
+        if (messages.isConnected && form.dataset.draftConversationId === id && messages.scrollTop === expectedTop) messages.scrollTop = messages.scrollHeight;
+      });
     }
   };
 })();
