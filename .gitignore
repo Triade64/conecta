@@ -6,3 +6,8 @@ node_modules/
 .env.local
 .vercel
 .sites-runtime/
+
+# Modelo sem valores reais; artefatos de build não são versionados.
+!.env.example
+dist/
+runtime-config.js
