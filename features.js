@@ -430,6 +430,7 @@
   const baseOpenModal = openModal;
   openModal = window.openModal = type => {
     baseOpenModal(type);
+    byId("form").querySelector('button[type="submit"]').textContent = "Salvar";
     const form = byId("form");
     delete form.dataset.featureAction;
     delete form.dataset.recordId;
@@ -1134,6 +1135,17 @@
         menu.append(button);
       };
       if (!message.deletedAt) {
+        menuAction("Encaminhar", () => {
+          openModal("message");
+          byId("modalTitle").textContent = "Encaminhar mensagem";
+          byId("modalDesc").textContent = "Selecione uma ou mais conversas. O texto e os anexos serão encaminhados.";
+          byId("message").value = (raw[index]?.text ?? message.text ?? "") + (message.attachmentName ? "\n📎 " + message.attachmentName : message.attachmentUrl ? "\n📎 GIF" : "");
+          byId("message").readOnly = true;
+          byId("message").required = false;
+          byId("form").dataset.featureAction = "forward-message";
+          byId("form").dataset.recordId = message.id;
+          byId("form").querySelector('button[type="submit"]').textContent = "Encaminhar";
+        });
         menuAction("Responder", () => {
           conversation.replyTarget = {
             id: message.id,
@@ -1720,7 +1732,8 @@
         const select = byId("destination");
         const destinations = [...new Set([...select.selectedOptions].map(option => option.value).filter(Boolean))];
         const text = byId("message").value.trim();
-        if (!user || !text || !destinations.length) throw new Error("Selecione ao menos um destinatário e escreva a mensagem.");
+        const forwarding = action === "forward-message";
+        if (!user || (!text && !forwarding) || !destinations.length) throw new Error("Selecione ao menos um destinatário e escreva a mensagem.");
         if (destinations.some(value => !value.startsWith("user:") && !value.startsWith("channel:"))) throw new Error("Destino inválido.");
         form.dataset.bulkSending = "true";
         const submit = form.querySelector('button[type="submit"],button:not([type])');
@@ -1738,7 +1751,8 @@
               const id = destination.startsWith("user:")
                 ? await fb.startDirectConversation(user, destination.slice(5))
                 : await fb.ensureChannel(user, destination.slice(8));
-              await fb.sendMessage(user, id, text);
+              if (forwarding) await window.conectaForwardMessage(user, id, form.dataset.recordId);
+              else await fb.sendMessage(user, id, text);
               conversationId = id;sent++;
               for (const option of select.options) if (option.value === destination) option.selected = false;
             } catch (error) { console.error("Could not send to recipient", error);failed.push(destination); }
@@ -1755,12 +1769,12 @@
           return;
         }
         byId("modalBack").classList.remove("show");
-        if (destinations.length === 1) {
+        if (destinations.length === 1 && !forwarding) {
           renderView("Conversas");
           const index = contacts.findIndex(item => item.firestoreId === conversationId);
           if (index >= 0) {selectedContact = index;renderConversations();}
         }
-        showToast(`Mensagem enviada para ${sent} destinatário(s).`);
+        showToast(`Mensagem ${forwarding ? "encaminhada" : "enviada"} para ${sent} destinatário(s).`);
         delete form.dataset.featureAction;
         return;
       } else return;
