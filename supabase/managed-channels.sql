@@ -55,16 +55,23 @@ revoke all on function private.validate_managed_channel() from public,anon,authe
 create trigger validate_managed_channel before insert or update on public.conversations
   for each row execute function private.validate_managed_channel();
 
+-- A private boolean helper checks only the extra membership restriction. It
+-- preserves existing moderation of legacy direct chats without granting access.
+create function private.managed_channel_allowed(p_conversation_id uuid) returns boolean
+language sql stable security definer set search_path = '' as $$
+  select (select auth.uid()) is not null and not exists (
+    select 1 from public.conversations c where c.id = p_conversation_id
+      and c.managed_channel and not ((select auth.uid()) = any(c.member_ids))
+  );
+$$;
+revoke all on function private.managed_channel_allowed(uuid) from public,anon;
+grant execute on function private.managed_channel_allowed(uuid) to authenticated;
 create policy managed_channel_messages on public.messages as restrictive for all to authenticated
-  using (exists (select 1 from public.conversations c where c.id = conversation_id and
-    (not c.managed_channel or (select auth.uid()) = any(c.member_ids))))
-  with check (exists (select 1 from public.conversations c where c.id = conversation_id and
-    (not c.managed_channel or (select auth.uid()) = any(c.member_ids))));
+  using (private.managed_channel_allowed(conversation_id))
+  with check (private.managed_channel_allowed(conversation_id));
 create policy managed_channel_reads on public.conversation_reads as restrictive for all to authenticated
-  using (exists (select 1 from public.conversations c where c.id = conversation_id and
-    (not c.managed_channel or (select auth.uid()) = any(c.member_ids))))
-  with check (exists (select 1 from public.conversations c where c.id = conversation_id and
-    (not c.managed_channel or (select auth.uid()) = any(c.member_ids))));
+  using (private.managed_channel_allowed(conversation_id))
+  with check (private.managed_channel_allowed(conversation_id));
 create policy managed_channel_files on storage.objects as restrictive for all to authenticated
   using (bucket_id <> 'chat-files' or exists (select 1 from public.conversations c
     where c.id::text = (storage.foldername(storage.objects.name))[2] and

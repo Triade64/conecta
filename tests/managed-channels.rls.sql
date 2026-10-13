@@ -85,5 +85,18 @@ do $$ begin
 end $$;
 insert into channel_test_results values ('admin role does not bypass managed-channel membership');
 reset role;
+-- Preserve the administrator's existing legacy private-message moderation.
+select set_config('request.jwt.claim.sub',(select member_id::text from channel_test_fixture),true);
+insert into public.conversations(id,kind,name,created_by,direct_recipient_id)
+select message_id,'direct','Legacy rollback fixture',member_id,outsider_id from channel_test_fixture;
+insert into public.messages(conversation_id,author_id,text)
+select message_id,member_id,'Legacy moderation rollback fixture' from channel_test_fixture;
+set local role authenticated;
+select set_config('request.jwt.claim.sub',(select admin_id::text from channel_test_fixture),true);
+do $$ begin
+ if not exists(select 1 from public.messages where conversation_id=(select message_id from channel_test_fixture)) then raise exception 'Legacy admin moderation regressed'; end if;
+end $$;
+insert into channel_test_results values ('legacy moderation remains unchanged');
+reset role;
 select jsonb_agg(check_name) as passed from channel_test_results;
 rollback;
