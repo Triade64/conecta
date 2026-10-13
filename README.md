@@ -62,3 +62,9 @@ Em **Project → Settings → Environment Variables**, configure `VITE_SUPABASE_
 O `vercel.json` executa `npm run build` e publica somente `dist/`. A configuração do Firebase Hosting também aponta para `dist/`, caso seja usado novamente. A configuração antiga do Firebase que estava desativada no HTML foi removida.
 
 Nunca use prefixos `VITE_`/`NEXT_PUBLIC_` para segredos nem coloque `service_role` no cliente. As permissões continuam sendo aplicadas pelo Supabase com RLS.
+
+## Canais personalizados
+
+Em **Administração → Canais e membros → Criar canal**, informe o nome e selecione os colaboradores ativos. Em **Gerenciar membros**, adicione/remova participantes ou renomeie o canal. O criador permanece como membro; administradores participantes podem gerenciar o canal. Outros administradores também precisam ser adicionados para acessar o canal.
+
+Os canais personalizados aparecem na lateral, em Conversas e como destino em Nova mensagem/Encaminhar. Os canais de setor continuam com suas permissões atuais. A migração `supabase/managed-channels.sql` deve ser aplicada depois dos scripts existentes. As políticas restringem mensagens, anexos e pontos de leitura aos membros, inclusive para administradores. A verificação SQL `tests/managed-channels.rls.sql` cria fixtures apenas dentro de uma transação que termina em rollback.

@@ -23,3 +23,8 @@ test('missing, failed or unknown conversations fail closed',async()=>{
  for(const options of [{conversation:null},{conversation:{kind:'direct',created_by:'admin'},conversationError:{message:'network'}},{conversation:{kind:'unknown'}}])assert.equal((await check(options)).length,0);
 });
 test('a stale realtime callback cannot notify a different signed-in account',async()=>assert.equal((await check({conversation:{kind:'direct',created_by:'admin'},session:'other'})).length,0));
+
+test('custom channel notifies only selected members, including administrators', async () => {
+ assert.equal((await check({conversation:{kind:'channel',managed_channel:true,member_ids:['a','b']}})).length,0);
+ assert.equal((await check({conversation:{kind:'channel',managed_channel:true,member_ids:['admin','b']}})).length,1);
+});

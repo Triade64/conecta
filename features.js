@@ -439,8 +439,9 @@
       if (destination) {
         const directory = window.conectaDirectory || [];
         const people = directory.map(person => `<option value="user:${person.id}">${escapeHtml(person.name || "Colaborador")} — ${escapeHtml(person.sector || person.role || "Equipe")}</option>`).join("");
+        const customChannels = contacts.filter(c => c.managed_channel).map(c => `<option value="conversation:${c.firestoreId}">${escapeHtml(c.name)}</option>`).join("");
         const channels = allowedSectors().map(sector => `<option value="channel:${escapeHtml(sector)}">${escapeHtml(sector)}</option>`).join("");
-        destination.innerHTML = `<option value="" disabled selected>Selecione um destino</option><optgroup label="Conversa individual">${people || '<option disabled>Nenhum colaborador disponível</option>'}</optgroup><optgroup label="Canais permitidos">${channels}</optgroup>`;
+        destination.innerHTML = `<option value="" disabled selected>Selecione um destino</option><optgroup label="Conversa individual">${people || '<option disabled>Nenhum colaborador disponível</option>'}</optgroup><optgroup label="Canais permitidos">${channels}${customChannels}</optgroup>`;
       }
       if (destination) window.conectaRecipients?.mount(destination);
       byId("modalDesc").textContent = "Selecione os destinatários. Cada pessoa receberá o mesmo texto na conversa individual.";
@@ -1482,7 +1483,7 @@
     const before = signature(contacts);
     contacts = (event.detail || []).filter(c => c.kind === "channel" || c.kind === "direct")
       .sort((a, b) => (b.updated_at || "").localeCompare(a.updated_at || ""))
-      .map(c => Object.assign(previous.get(c.id) || { messages: [], replyTarget: null }, { ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda" }));
+      .map(c => Object.assign(previous.get(c.id) || { messages: [], replyTarget: null }, { ...c, firestoreId: c.id, initials: (c.name || "? ").split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase(), tone: "", type: c.kind === "direct" ? `Individual · ${c.directSector || "outro setor"}` : c.managed_channel ? "Canal · membros selecionados" : "Canal do setor", snippet: c.lastMessage || "Nenhuma mensagem ainda" }));
     const selectedIndex = contacts.findIndex(c => c.firestoreId === selectedConversationId);
     selectedContact = selectedIndex >= 0 ? selectedIndex : 0;
     if (before !== signature(contacts) && byId("viewPanel")?.classList.contains("show") && byId("crumb")?.textContent === "Conversas") renderConversations();
@@ -1734,7 +1735,7 @@
         const text = byId("message").value.trim();
         const forwarding = action === "forward-message";
         if (!user || (!text && !forwarding) || !destinations.length) throw new Error("Selecione ao menos um destinatário e escreva a mensagem.");
-        if (destinations.some(value => !value.startsWith("user:") && !value.startsWith("channel:"))) throw new Error("Destino inválido.");
+        if (destinations.some(value => !value.startsWith("user:") && !value.startsWith("channel:") && !value.startsWith("conversation:"))) throw new Error("Destino inválido.");
         form.dataset.bulkSending = "true";
         const submit = form.querySelector('button[type="submit"],button:not([type])');
         const cancel = byId("cancelBtn");
@@ -1750,7 +1751,7 @@
             try {
               const id = destination.startsWith("user:")
                 ? await fb.startDirectConversation(user, destination.slice(5))
-                : await fb.ensureChannel(user, destination.slice(8));
+                : destination.startsWith("conversation:") ? destination.slice(13) : await fb.ensureChannel(user, destination.slice(8));
               if (forwarding) await window.conectaForwardMessage(user, id, form.dataset.recordId);
               else await fb.sendMessage(user, id, text);
               conversationId = id;sent++;

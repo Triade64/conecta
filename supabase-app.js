@@ -112,12 +112,13 @@ async function dispatchIncomingMessageNotification(payload, user) {
   const { data: visibleMessage, error } = await supabase.from("messages").select("id,conversation_id,author_id,text,deleted_at").eq("id", message.id).maybeSingle();
   if (error || !visibleMessage || visibleMessage.deleted_at || visibleMessage.author_id === user.id) return;
   const [{ data: conversation, error: conversationError }, { data: directory }] = await Promise.all([
-    supabase.from("conversations").select("name,kind,created_by,direct_recipient_id").eq("id", visibleMessage.conversation_id).maybeSingle(),
+    supabase.from("conversations").select("name,kind,created_by,direct_recipient_id,managed_channel,member_ids").eq("id", visibleMessage.conversation_id).maybeSingle(),
     supabase.rpc("list_team_directory")
   ]);
   if (window.conectaCurrentUser?.id !== user.id || conversationError || !conversation) return;
   // Administrator read access for moderation does not make them a chat participant.
   if (conversation.kind === "direct" && conversation.created_by !== user.id && conversation.direct_recipient_id !== user.id) return;
+  if (conversation.managed_channel && !conversation.member_ids?.includes(user.id)) return;
   if (!["direct", "channel"].includes(conversation.kind)) return;
   const author = (directory || []).find(person => person.id === visibleMessage.author_id);
   dispatch("conecta-incoming-message-notification", {
@@ -434,7 +435,23 @@ window.conectaFirebase = {
     await supabase.from("conversations").update({ last_message: "Mensagem apagada" }).eq("id", previous.conversation_id).eq("last_message", previous.text);
   },
   deleteMessageForMe: async (id, user) => { const { error } = await supabase.from("message_hidden_for").insert({ message_id: id, user_id: user.id }); if (error && error.code !== "23505") throw error; },
-  ensureChannel: async (user, name) => { let { data: existing } = await supabase.from("conversations").select("id").eq("name", name).maybeSingle(); if (existing) return existing.id; const { data } = await supabase.from("conversations").insert({ kind: "channel", name, sector: name, created_by: user.id }).select("id").single(); return data.id; },
+  listManagedChannels: async () => {
+    const { data, error } = await supabase.from("conversations").select("id,name,member_ids,created_by").eq("managed_channel", true).order("name");
+    if (error) throw error;
+    return data || [];
+  },
+  saveManagedChannel: async (user, { id = null, name, memberIds }) => {
+    if (!user?.id || window.conectaCurrentUser?.id !== user.id) throw new Error("Sua sessão mudou. Entre novamente.");
+    const members = [...new Set([...(memberIds || []), user.id])];
+    const values = { name: name.trim(), member_ids: members, updated_at: new Date().toISOString() };
+    const query = id ? supabase.from("conversations").update(values).eq("id", id).eq("managed_channel", true)
+      : supabase.from("conversations").insert({ ...values, kind: "channel", sector: "Geral", managed_channel: true, created_by: user.id });
+    const { data, error } = await query.select("id").single();
+    if (error) throw error;
+    if (window.conectaCurrentUser?.id === user.id) await loadData(user).catch(error => console.warn("Channel saved; refresh pending", error));
+    return data.id;
+  },
+  ensureChannel: async (user, name) => { let { data: existing } = await supabase.from("conversations").select("id").eq("kind", "channel").eq("managed_channel", false).eq("name", name).maybeSingle(); if (existing) return existing.id; const { data } = await supabase.from("conversations").insert({ kind: "channel", name, sector: name, created_by: user.id }).select("id").single(); return data.id; },
   startDirectConversation: async (user, otherUserId) => {
     const { data, error } = await supabase.rpc("start_direct_conversation", { p_other_user_id: otherUserId });
     if (error) throw error;
