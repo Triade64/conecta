@@ -61,3 +61,27 @@ test('coffee can begin before the dishes and sweeping start date',()=>{
  const result=generate({...coffeeConfig,startDate:'2026-10-05'},'2026-10-05');
  assert.equal(result['2026-09-30'].wash,null);assert.equal(result['2026-09-30'].sweeper,null);assert.equal(result['2026-09-30'].coffeeGroup,0);assert.equal(result['2026-10-05'].wash,'A');
 });
+test('dish and sweeping rosters are independent and alphabetical',()=>{
+ const config={...base,dishPeople:['C','A','B'],sweepPeople:['Z','Y'],startSweeper:'Y'};
+ const result=generate(config,'2026-10-14');
+ assert.equal(result['2026-09-30'].sweeper,'Y');assert.equal(result['2026-10-07'].sweeper,'Z');assert.equal(result['2026-10-14'].sweeper,'Y');
+ for(const row of Object.values(result)){
+  if(row.wash)assert(['A','B','C'].includes(row.wash));
+  if(row.dry)assert(['A','B','C'].includes(row.dry));
+  if(row.sweeper)assert(['Y','Z'].includes(row.sweeper));
+ }
+});
+test('sweeping does not depend on dish participants being present',()=>{
+ const result=generate({...base,dishPeople:['A','B'],sweepPeople:['Y','Z'],startSweeper:'Y',days:{'2026-09-30':{absent:['A','B','Y']}}},'2026-10-07');
+ assert.equal(result['2026-09-30'].wash,null);assert.equal(result['2026-09-30'].sweeper,'Z');assert.equal(result['2026-10-07'].sweeper,'Y');
+});
+test('manual assignments cannot include people outside the task roster',()=>{
+ const result=generate({...base,dishPeople:['A','B'],sweepPeople:['Z'],days:{'2026-09-30':{wash:'Z',dry:'Z',sweeper:'A'}}},'2026-09-30');
+ assert.notEqual(result['2026-09-30'].wash,'Z');assert.notEqual(result['2026-09-30'].dry,'Z');assert.equal(result['2026-09-30'].sweeper,'Z');
+});
+test('explicit empty rosters disable tasks without inheriting legacy names or stopping coffee',()=>{
+ const config={...coffeeConfig,dishPeople:[],sweepPeople:[]};
+ const row=generate(config,'2026-09-30')['2026-09-30'];
+ assert.equal(row.dishes,false);assert.equal(row.sweep,false);assert.equal(row.wash,null);assert.deepEqual(row.coffeePeople,coffeeConfig.coffeeGroups[0]);
+ const sweeping=generate({...base,dishPeople:[],sweepPeople:['Z']},'2026-09-30')['2026-09-30'];assert.equal(sweeping.sweeper,'Z');assert.equal(sweeping.dishes,false);
+});

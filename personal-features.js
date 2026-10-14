@@ -98,7 +98,7 @@
     const body=card.querySelector('.daily-scale-body');let content;
     try{
       if(!calendar)content='<p class="daily-scale-empty">Carregando escala…</p>';
-      else if(!calendar.config?.startDate||!Array.isArray(calendar.config.people)||calendar.config.people.length<2)content='<p class="daily-scale-empty">A escala ainda não foi configurada.</p>';
+      else if(!window.conectaKitchenRotation?.isConfigured(calendar.config))content='<p class="daily-scale-empty">A escala ainda não foi configurada.</p>';
       else {
         const row=window.conectaKitchenRotation.generate(calendar.config,stamp)[stamp];
         const task=(label,name)=>`<div class="daily-task"><small>${label}</small><strong>${esc(name)}</strong></div>`;
