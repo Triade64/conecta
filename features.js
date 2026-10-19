@@ -847,17 +847,15 @@
       const clipboardGif = Array.from(clipboard.files || []).find(file => file.type.toLowerCase() === "image/gif");
       const html = clipboard.getData("text/html");
       let source = "";
-      let containsRichMedia = false;
       if (html) {
         const doc = new DOMParser().parseFromString(html, "text/html");
         const imageElement = doc.querySelector("img[src]");
         const linkElement = doc.querySelector("a[href]");
         source = imageElement?.getAttribute("src") || linkElement?.getAttribute("href") || "";
-        containsRichMedia = !!(imageElement || linkElement);
       }
       const uri = clipboard.getData("text/uri-list").split(/\r?\n/).find(line => line && !line.startsWith("#")) || "";
-      const plain = clipboard.getData("text/plain").trim();
-      const candidate = source || uri || plain;
+      const plain = clipboard.getData("text/plain");
+      const candidate = source || uri || plain.trim();
       const hasGifFile = !!(gifItem || clipboardGif);
       const hasGifData = candidate.startsWith("data:image/gif");
       if (hasGifFile || hasGifData) {
@@ -874,15 +872,9 @@
         return;
       }
       if (candidate && attachRemoteGif(candidate)) { event.preventDefault(); return; }
-      if (containsRichMedia) {
-        event.preventDefault();
-        showToast("O conteúdo foi colado como link e não é um GIF compatível. Escolha um GIF no painel do Windows.");
-        return;
-      }
-      if (plain) {
-        event.preventDefault();
-        document.execCommand("insertText", false, plain);
-      }
+      const pastedText = window.conectaChatContent.clipboardText(clipboard);
+      event.preventDefault();
+      if (pastedText) window.conectaChatContent.insertText(input, pastedText);
     };
     input.addEventListener("paste", handleClipboard);
     input.addEventListener("keydown", event => {
@@ -894,7 +886,7 @@
     input.setAttribute("autocomplete", "off");
     input.setAttribute("autocorrect", "off");
     input.setAttribute("spellcheck", "false");
-    input.title = "Use Windows + . e escolha um GIF; depois cole-o nesta conversa.";
+    input.title = "Cole textos, links ou imagens. Enter envia; Shift + Enter quebra a linha.";
   };
   const pendingFiles = new Map();
   const sendingConversations = new Set();
@@ -933,7 +925,8 @@
     button.onclick = () => picker.click(); picker.onchange = () => { if (picker.files[0]) selectFile(picker.files[0]); picker.value = ""; };
     input.addEventListener("paste", event => {
       const file = [...(event.clipboardData?.files || [])].find(file => file.type.startsWith("image/") && file.type !== "image/gif");
-      if (file) { event.preventDefault(); event.stopImmediatePropagation(); selectFile(file); }
+      const copiedTable = /<table(?:\s|>)/i.test(event.clipboardData?.getData("text/html") || "");
+      if (file && !copiedTable) { event.preventDefault(); event.stopImmediatePropagation(); selectFile(file); }
       else if (pendingFiles.has(id) && [...(event.clipboardData?.files || [])].some(file => file.type === "image/gif")) { event.preventDefault(); event.stopImmediatePropagation(); showToast("Remova o anexo antes de selecionar um GIF."); }
     }, true);
     form.insertBefore(button,form.querySelector('button[type="submit"]')); form.append(picker); form.before(preview); form.__refreshAttachmentState = showPreview; showPreview();
@@ -1095,6 +1088,8 @@
           if (time && !time.textContent.includes("editada")) time.textContent += " · editada";
         }
       }
+
+      if (!message.deletedAt) window.conectaChatContent.linkify(bubble);
 
       if (message.replyTo && !stack.querySelector(".reply-quote")) {
         const parent = raw.find(row => row.id === message.replyTo);

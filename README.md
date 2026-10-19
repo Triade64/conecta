@@ -70,3 +70,7 @@ Em **Administração → Canais e membros → Criar canal**, informe o nome e se
 Os canais personalizados aparecem na lateral, em Conversas e como destino em Nova mensagem/Encaminhar. Os canais de setor continuam com suas permissões atuais. A migração `supabase/managed-channels.sql` deve ser aplicada depois dos scripts existentes. As políticas restringem mensagens, anexos e pontos de leitura aos membros, inclusive para administradores. A verificação SQL `tests/managed-channels.rls.sql` cria fixtures apenas dentro de uma transação que termina em rollback.
 
 Os participantes da louça (lavar e secar) e da varrição são configurados em listas separadas em **Calendário → Configurar rodízio**. Cada lista segue sua própria ordem alfabética; a louça exige pelo menos duas pessoas e a varrição pode ter uma. Deixar uma lista vazia desativa a tarefa. Configurações antigas mantêm os participantes atuais até o administrador editar as listas. As turmas do café continuam independentes. Em Ajustar dia, as opções de substituição respeitam a lista da tarefa.
+
+## Links e colagem no chat
+
+Cole textos, links e dados de planilhas com Ctrl+V. O chat preserva quebras de linha e tabulações, sem importar scripts ou estilos dos programas de origem. Endereços HTTP/HTTPS e www ficam clicáveis nas mensagens; links abrem em outra guia no navegador. Imagens copiadas continuam disponíveis como anexo, enquanto tabelas copiadas são inseridas como texto. Enter envia e Shift+Enter insere uma quebra de linha.
