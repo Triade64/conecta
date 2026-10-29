@@ -74,3 +74,7 @@ Os participantes da louça (lavar e secar) e da varrição são configurados em 
 ## Links e colagem no chat
 
 Cole textos, links e dados de planilhas com Ctrl+V. O chat preserva quebras de linha e tabulações, sem importar scripts ou estilos dos programas de origem. Endereços HTTP/HTTPS e www ficam clicáveis nas mensagens; links abrem em outra guia no navegador. Imagens copiadas continuam disponíveis como anexo, enquanto tabelas copiadas são inseridas como texto. Enter envia e Shift+Enter insere uma quebra de linha.
+
+## Emojis no chat
+
+O botão 😀 abre 748 emojis Unicode em nove categorias: Mais usados, Carinhas e emoções, Gestos e pessoas, Corações e celebrações, Trabalho e objetos, Comidas e bebidas, Animais e natureza, Viagens e atividades e Símbolos e sinais. Troque a categoria no seletor acima dos emojis. Os emojis são inseridos no cursor, preservando o rascunho. O painel tem rolagem própria e se ajusta à área da conversa.

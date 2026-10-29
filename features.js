@@ -563,7 +563,7 @@
   const addEmojiPicker = conversation => {
     const composer = byId("composer"), input = byId("chatInput");
     if (!composer || !input || composer.querySelector(".emoji-compose-tools")) return;
-    const emojis = ["😀","😃","😄","😁","😅","😂","🤣","😊","😉","😍","🥰","😘","🤔","😮","😢","😭","😎","🥳","🙏","👏","👍","👎","❤️","💚","🔥","✨","🎉","✅","👀","🤝","💪","📌","💡","☕","📣","🙌"];
+    const categories = window.conectaEmojiCategories;
     const tools = document.createElement("div");
     tools.className = "emoji-compose-tools";
     const toggle = document.createElement("button");
@@ -585,7 +585,22 @@
     input.addEventListener("keyup", saveSelection);
     input.addEventListener("click", saveSelection);
     input.addEventListener("input", saveSelection);
-    emojis.forEach(emoji => {
+    const category = document.createElement("select");
+    category.className = "emoji-category";
+    category.setAttribute("aria-label", "Categoria de emojis");
+    categories.forEach((group, index) => { const option = document.createElement("option"); option.value = index; option.textContent = group.name; category.append(option); });
+    const choices = document.createElement("div"); choices.className = "emoji-choices";
+    picker.append(category, choices);
+    const positionPicker = () => {
+      const anchor = toggle.getBoundingClientRect(), chat = composer.closest(".conversation-chat").getBoundingClientRect();
+      Object.assign(picker.style, { position: "fixed", bottom: "auto", width: Math.max(100, Math.min(320, innerWidth - 16, chat.width - 16)) + "px", maxHeight: Math.max(80, Math.min(360, anchor.top - Math.max(8, chat.top) - 8)) + "px", top: "0px", left: "0px" });
+      const size = picker.getBoundingClientRect();
+      picker.style.top = Math.max(8, anchor.top - size.height - 8) + "px";
+      picker.style.left = Math.max(8, Math.min(anchor.right - size.width, innerWidth - size.width - 8)) + "px";
+    };
+    const renderChoices = () => {
+      choices.replaceChildren();
+      categories[Number(category.value)].emojis.forEach(emoji => {
       const choice = document.createElement("button");
       choice.type = "button";
       choice.className = "emoji-choice";
@@ -593,9 +608,10 @@
       choice.setAttribute("aria-label", emoji);
       choice.addEventListener("pointerdown", event => { event.preventDefault(); saveSelection(); });
       choice.addEventListener("click", () => {
+        if (input.contentEditable === "false") return;
         input.focus();
         let range = savedRange?.cloneRange();
-        if (!range || !input.contains(range.startContainer)) {
+        if (!range || !input.contains(range.startContainer) || !input.contains(range.endContainer)) {
           range = document.createRange();
           range.selectNodeContents(input);
           range.collapse(false);
@@ -611,11 +627,19 @@
         savedRange = range.cloneRange();
         input.dispatchEvent(new Event("input", { bubbles: true }));
       });
-      picker.append(choice);
-    });
+      choices.append(choice);
+      });
+      if (!picker.hidden) positionPicker();
+    };
+    category.addEventListener("pointerdown", saveSelection);
+    category.addEventListener("change", renderChoices);
+    renderChoices();
+    picker.addEventListener("keydown", event => { if (event.key === "Escape") { event.preventDefault(); picker.hidden = true; toggle.setAttribute("aria-expanded", "false"); toggle.focus(); } });
     toggle.addEventListener("click", () => {
+      saveSelection();
       picker.hidden = !picker.hidden;
       toggle.setAttribute("aria-expanded", String(!picker.hidden));
+      if (!picker.hidden) positionPicker();
     });
     tools.append(toggle, picker);
     const sendButton = composer.querySelector('button[type="submit"]');
