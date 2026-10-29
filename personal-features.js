@@ -122,7 +122,7 @@
   window.addEventListener('conecta-conversations-sync',()=>{if(visibleFavorites())paintFavoriteList();});
   window.addEventListener('conecta-profile-ready',schedule);
   window.addEventListener('conecta-auth-session-reset',()=>{statuses.clear();favorites=[];favoritesReady=false;calendar=null;pending.clear();statusDialog?.close();schedule();if(visibleFavorites())paintFavoriteList();});
-  window.addEventListener('focus',()=>{paintScale();if(user())void api()?.loadPersonalData?.(user());});
+  window.addEventListener('focus',paintScale);
   window.setInterval(paintScale,60_000);
   schedule();
 })();

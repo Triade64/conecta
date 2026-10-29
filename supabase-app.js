@@ -12,6 +12,22 @@ let presenceChannel = null;
 let activeAuthUserId = null;
 let personalDataGeneration = 0;
 const profilePhotoUrlCache = new Map();
+const signedUrlCache = window.conectaSync.createUrlCache();
+const giphyUrlCache = new Map();
+let giphyRetryAfter = 0;
+let activeHistory = null, dataQueue = null, dataOwner = null, dataEpoch = 0;
+let dataState = {};
+const personalGroups = ["statuses", "favorites", "calendar", "hidden"];
+const allGroups = ["profile", "notices", "reminders", "conversations", "users", "directory", "unread", "announcements", "photos", ...personalGroups];
+const signedUrl = (bucket, path, seconds, options) => {
+  const owner = window.conectaCurrentUser?.id;
+  const key = JSON.stringify([owner, bucket, path, options]);
+  return signedUrlCache.get(key, (seconds - 120) * 1000, async () => {
+    const { data, error } = await supabase.storage.from(bucket).createSignedUrl(path, seconds, options);
+    if (error) { console.warn("Could not sign private attachment", error); return ""; }
+    return data?.signedUrl || "";
+  });
+};
 
 const dispatch = (name, detail) => window.dispatchEvent(new CustomEvent(name, { detail }));
 const normalize = (row, extra = {}) => ({ id: row.id, ...row, ...extra });
@@ -26,12 +42,7 @@ async function ensureUserProfile(user) {
 }
 
 async function withGlobalAnnouncementImages(rows = []) {
-  return Promise.all(rows.map(async row => {
-    if (!row.image_path) return { ...row, image_url: "" };
-    const { data, error } = await supabase.storage.from("global-announcements").createSignedUrl(row.image_path, 12 * 60 * 60);
-    if (error) console.error("Could not sign global announcement image", error);
-    return { ...row, image_url: data?.signedUrl || "" };
-  }));
+  return Promise.all(rows.map(async row => ({ ...row, image_url: row.image_path ? await signedUrl("global-announcements", row.image_path, 12 * 60 * 60) : "" })));
 }
 
 async function withProfilePhotoUrls(rows = []) {
@@ -49,61 +60,88 @@ async function withProfilePhotoUrls(rows = []) {
   return new Map(entries);
 }
 
-async function loadPersonalData(user) {
-  const generation = ++personalDataGeneration;
-  const results = await Promise.all([
-    supabase.from("team_status").select("user_id,status,note,updated_at"),
-    supabase.from("message_favorites").select("message_id,created_at,message:messages(id,conversation_id,text,author_id,author_name,created_at,deleted_at,attachment_name,attachment_path)").eq("user_id", user.id).order("created_at", { ascending: false }),
-    supabase.from("kitchen_calendar").select("config,version").eq("id", true).maybeSingle(),
-    supabase.from("message_hidden_for").select("message_id").eq("user_id", user.id)
-  ]);
-  if (window.conectaCurrentUser?.id !== user.id || generation !== personalDataGeneration) return;
-  const [statuses, favorites, calendar, hidden] = results;
-  if (!statuses.error) dispatch("conecta-team-status-sync", statuses.data || []);
-  if (!favorites.error && !hidden.error) {
-    const excluded = new Set((hidden.data || []).map(row => row.message_id));
-    dispatch("conecta-favorites-sync", (favorites.data || []).filter(row => row.message && !excluded.has(row.message_id)));
-  }
-  if (!calendar.error) dispatch("conecta-kitchen-config-sync", calendar.data);
-  if (results.some(result => result.error)) console.warn("Could not refresh personal features", results.filter(result => result.error).map(result => result.error));
+async function loadPersonalData(user, groups = personalGroups) { return loadData(user, groups); }
+
+async function publishAnnouncements(epoch = dataEpoch) {
+  const now = Date.now();
+  const rows = (dataState.announcements || []).filter(item => item.is_active && Date.parse(item.starts_at) <= now && (!item.ends_at || Date.parse(item.ends_at) > now));
+  const visible = await withGlobalAnnouncementImages(rows);
+  if (epoch === dataEpoch) dispatch("conecta-global-announcement-sync", visible);
 }
 
-async function loadData(user) {
-  void loadPersonalData(user).catch(error => console.warn("Personal features refresh failed", error));
-  const profile = await ensureUserProfile(user);
-  // Reminders are private to their creator, including for administrator accounts.
-  const remindersQuery = supabase.from("reminders").select("*").eq("owner_id", user.id).order("created_at", { ascending: false });
-  const [{ data: notices }, { data: reminders }, { data: conversations }, { data: users }, { data: directory }, { data: unreadRows }, { data: announcements }, { data: photoRows }] = await Promise.all([
-    supabase.from("notices").select("*").order("created_at", { ascending: false }),
-    remindersQuery,
-    supabase.from("conversations").select("*").order("updated_at", { ascending: false }),
-    supabase.from("profiles").select("*").order("name"),
-    supabase.rpc("list_team_directory"),
-    supabase.rpc("get_unread_counts"),
-    supabase.from("global_announcements").select("*").order("starts_at", { ascending: true }),
-    supabase.from("profile_photos").select("user_id,path")
-  ]);
-  const photoUrls = await withProfilePhotoUrls(photoRows || []);
-  const colleagues = (directory || []).map(person => ({ ...person, avatar_url: photoUrls.get(person.id) || "" }));
-  if (window.conectaCurrentProfile && window.conectaCurrentUser?.id === user.id) {
-    window.conectaCurrentProfile.avatar_url = photoUrls.get(user.id) || "";
-    dispatch("conecta-profile-photo-sync", { id: user.id, avatar_url: window.conectaCurrentProfile.avatar_url });
+async function refreshDataGroups(user, groups, epoch) {
+  const current = () => epoch === dataEpoch && window.conectaCurrentUser?.id === user.id;
+  if (!current()) return;
+  if (groups.includes("profile")) {
+    const profile = await ensureUserProfile(user);
+    if (!current()) return;
+    dataState.profile = profile;
+    const previous = window.conectaCurrentProfile;
+    window.conectaCurrentProfile = { ...previous, ...profile };
+    if (previous?.role !== profile.role || previous?.active !== profile.active) dispatch("conecta-profile-ready", window.conectaCurrentProfile);
   }
-  const people = new Map(colleagues.map(person => [person.id, person]));
-  const unreadCounts = new Map((unreadRows || []).map(row => [row.conversation_id, Number(row.unread_count) || 0]));
-  dispatch("conecta-notices-sync", (notices || []).map(x => ({ ...x, text: x.body, time: syncDate(x.created_at) })));
-  dispatch("conecta-reminders-sync", (reminders || []).map(x => ({ ...x, title: x.title, time: syncDate(x.due_at || x.created_at), done: x.done })));
-  dispatch("conecta-directory-sync", colleagues);
-  dispatch("conecta-conversations-sync", (conversations || []).map(x => {
-    const otherId = x.kind === "direct" ? (x.created_by === user.id ? x.direct_recipient_id : x.created_by) : null;
-    const other = otherId ? people.get(otherId) : null;
-    return { ...x, firestoreId: x.id, name: x.kind === "direct" ? (other?.name || "Conversa individual") : x.name, directUserId: otherId, directSector: other?.sector || "", avatar_url: other?.avatar_url || "", unreadCount: unreadCounts.get(x.id) || 0, kind: x.kind, lastMessage: x.last_message };
-  }));
-  dispatch("conecta-unread-sync", Object.fromEntries(unreadCounts));
-  const now = Date.now();
-  const currentAnnouncements = (announcements || []).filter(item => item.is_active && new Date(item.starts_at).getTime() <= now && (!item.ends_at || new Date(item.ends_at).getTime() > now));
-  dispatch("conecta-global-announcement-sync", await withGlobalAnnouncementImages(currentAnnouncements));
-  if (profile.role === "admin" && profile.active === true) dispatch("conecta-users-sync", (users || []).map(x => ({ ...x, email: x.email })));
+  const queries = {
+    notices: () => supabase.from("notices").select("id,title,body,sector,tag,author_id,created_at").order("created_at", { ascending: false }),
+    reminders: () => supabase.from("reminders").select("id,title,due_at,done,owner_id,created_at").eq("owner_id", user.id).order("created_at", { ascending: false }),
+    conversations: () => supabase.from("conversations").select("id,kind,name,sector,created_by,direct_recipient_id,managed_channel,member_ids,updated_at,last_message").order("updated_at", { ascending: false }),
+    users: () => (dataState.profile || window.conectaCurrentProfile)?.role === "admin" ? supabase.from("profiles").select("id,name,email,role,sector,active").order("name") : Promise.resolve({data:[]}),
+    directory: () => supabase.rpc("list_team_directory"),
+    unread: () => supabase.rpc("get_unread_counts"),
+    announcements: () => supabase.from("global_announcements").select("id,title,body,is_active,starts_at,ends_at,image_path,updated_at").order("starts_at", { ascending: true }),
+    photos: () => supabase.from("profile_photos").select("user_id,path"),
+    statuses: () => supabase.from("team_status").select("user_id,status,note,updated_at"),
+    favorites: () => supabase.from("message_favorites").select("message_id,created_at,message:messages(id,conversation_id,text,author_id,author_name,created_at,deleted_at,attachment_name,attachment_path)").eq("user_id", user.id).order("created_at", { ascending: false }),
+    calendar: () => supabase.from("kitchen_calendar").select("config,version").eq("id", true).maybeSingle(),
+    hidden: () => supabase.from("message_hidden_for").select("message_id").eq("user_id", user.id)
+  };
+  const keys = [...new Set(groups)].filter(key => queries[key]);
+  const results = await Promise.all(keys.map(key => queries[key]()));
+  if (!current()) return;
+  const changed = new Set();
+  results.forEach((result,index) => {
+    if (result.error) { console.warn("Could not refresh " + keys[index], result.error); return; }
+    dataState[keys[index]] = result.data ?? (keys[index] === "calendar" ? null : []); changed.add(keys[index]);
+  });
+  if (changed.has("photos")) {
+    dataState.photoUrls = await withProfilePhotoUrls(dataState.photos);
+    if (!current()) return;
+    const avatar = dataState.photoUrls.get(user.id) || "";
+    if (window.conectaCurrentProfile) window.conectaCurrentProfile.avatar_url = avatar;
+    dispatch("conecta-profile-photo-sync", { id:user.id, avatar_url:avatar });
+  }
+  const colleagues = (dataState.directory || []).map(person => ({...person,avatar_url:dataState.photoUrls?.get(person.id)||""}));
+  const people = new Map(colleagues.map(person => [person.id,person]));
+  const unreadCounts = new Map((dataState.unread || []).map(row => [row.conversation_id,Number(row.unread_count)||0]));
+  if (changed.has("notices")) dispatch("conecta-notices-sync",dataState.notices.map(x=>({...x,text:x.body,time:syncDate(x.created_at)})));
+  if (changed.has("reminders")) dispatch("conecta-reminders-sync",dataState.reminders.map(x=>({...x,time:syncDate(x.due_at||x.created_at),done:x.done})));
+  if (changed.has("directory")||changed.has("photos")) dispatch("conecta-directory-sync",colleagues);
+  if(changed.has("conversations")&&activeHistory&&!dataState.conversations.some(row=>row.id===activeHistory.id)) {
+    const previous=activeHistory;stopMessageSync();previous.callback([]);
+  }
+  if (["conversations","directory","unread","photos"].some(key=>changed.has(key))) {
+    dispatch("conecta-conversations-sync",(dataState.conversations||[]).map(x=>{
+      const otherId=x.kind==="direct"?(x.created_by===user.id?x.direct_recipient_id:x.created_by):null,other=people.get(otherId);
+      return {...x,firestoreId:x.id,name:x.kind==="direct"?(other?.name||"Conversa individual"):x.name,directUserId:otherId,directSector:other?.sector||"",avatar_url:other?.avatar_url||"",unreadCount:unreadCounts.get(x.id)||0,lastMessage:x.last_message};
+    }));
+  }
+  if (changed.has("unread")) dispatch("conecta-unread-sync",Object.fromEntries(unreadCounts));
+  if (changed.has("statuses")) dispatch("conecta-team-status-sync",dataState.statuses);
+  if (changed.has("favorites")||changed.has("hidden")) {
+    const hidden=new Set((dataState.hidden||[]).map(row=>row.message_id));
+    dispatch("conecta-favorites-sync",(dataState.favorites||[]).filter(row=>row.message&&!hidden.has(row.message_id)));
+  }
+  if (changed.has("calendar")) dispatch("conecta-kitchen-config-sync",dataState.calendar);
+  if (changed.has("users")&&(dataState.profile||window.conectaCurrentProfile)?.role==="admin") dispatch("conecta-users-sync",dataState.users);
+  if (changed.has("announcements")) await publishAnnouncements(epoch);
+}
+
+function loadData(user, groups = allGroups, immediate = true) {
+  if (window.conectaCurrentUser?.id !== user.id) return Promise.resolve();
+  if (dataOwner !== user.id || !dataQueue) {
+    dataQueue?.stop(); dataOwner=user.id; dataState={}; const epoch=++dataEpoch;
+    dataQueue=window.conectaSync.createQueue(keys=>refreshDataGroups(user,keys,epoch));
+  }
+  return dataQueue.request(groups,immediate);
 }
 
 async function dispatchIncomingMessageNotification(payload, user) {
@@ -113,7 +151,7 @@ async function dispatchIncomingMessageNotification(payload, user) {
   if (error || !visibleMessage || visibleMessage.deleted_at || visibleMessage.author_id === user.id) return;
   const [{ data: conversation, error: conversationError }, { data: directory }] = await Promise.all([
     supabase.from("conversations").select("name,kind,created_by,direct_recipient_id,managed_channel,member_ids").eq("id", visibleMessage.conversation_id).maybeSingle(),
-    supabase.rpc("list_team_directory")
+    typeof dataState !== "undefined" && dataOwner === user.id && dataState.directory ? Promise.resolve({data:dataState.directory}) : supabase.rpc("list_team_directory")
   ]);
   if (window.conectaCurrentUser?.id !== user.id || conversationError || !conversation) return;
   // Administrator read access for moderation does not make them a chat participant.
@@ -134,9 +172,49 @@ async function dispatchIncomingMessageNotification(payload, user) {
 
 function startDataSync(user) {
   stopDataSync();
-  loadData(user);
-  const channel = supabase.channel("conecta-live").on("postgres_changes", { event: "*", schema: "public", table: "notices" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "global_announcements" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "reminders" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "conversations" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "profiles" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "messages" }, () => loadData(user)).on("postgres_changes", { event: "*", schema: "public", table: "team_status" }, () => loadPersonalData(user)).on("postgres_changes", { event: "*", schema: "public", table: "message_favorites", filter: "user_id=eq." + user.id }, () => loadPersonalData(user)).on("postgres_changes", { event: "*", schema: "public", table: "kitchen_calendar" }, () => loadPersonalData(user)).on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + user.id }, () => loadPersonalData(user)).on("postgres_changes", { event: "INSERT", schema: "public", table: "messages" }, payload => dispatchIncomingMessageNotification(payload, user)).subscribe();
-  const announcementScheduleTimer = window.setInterval(() => loadData(user), 60_000);
+  let stopped=false, connected=false, lastRecovery=Date.now();
+  const request = groups => { if (!stopped) void loadData(user,groups,false).catch(error=>console.warn("Data refresh failed",error)); };
+  const recover = (force=false) => {
+    if (stopped || (!force && Date.now()-lastRecovery < 60_000)) return;
+    lastRecovery=Date.now(); request(allGroups);
+    void activeHistory?.controller.recover().catch(error=>console.warn("Message recovery failed",error));
+  };
+  void loadData(user).catch(error=>console.warn("Initial data refresh failed",error));
+  const channel=supabase.channel("conecta-live");
+  const scopes={notices:["notices"],global_announcements:["announcements"],reminders:["reminders"],conversations:["conversations","unread"],profiles:allGroups,profile_photos:["photos"],team_status:["statuses"],message_favorites:["favorites"],kitchen_calendar:["calendar"],message_hidden_for:["hidden","favorites"]};
+  for (const [table,groups]of Object.entries(scopes)) {
+    const filter={event:"*",schema:"public",table};
+    if (["reminders","message_favorites","message_hidden_for"].includes(table)) filter.filter=(table==="reminders"?"owner_id":"user_id")+"=eq."+user.id;
+    channel.on("postgres_changes",filter,payload=>{
+      if(table==="profile_photos")profilePhotoUrlCache.delete(payload.new?.path||payload.old?.path);
+      request(groups);
+    });
+  }
+  channel.on("postgres_changes",{event:"*",schema:"public",table:"messages"},payload=>{
+    request(["conversations","unread"]);
+    const id=payload.new?.id||payload.old?.id;
+    if ((dataState.favorites||[]).some(row=>row.message_id===id)) request(["favorites"]);
+    if(payload.eventType==="INSERT")void dispatchIncomingMessageNotification(payload,user).catch(error=>console.warn("Notification failed",error));
+  }).subscribe(status=>{
+    if(status==="SUBSCRIBED"){if(connected)recover(true);connected=true;}
+    else if(["CHANNEL_ERROR","TIMED_OUT","CLOSED"].includes(status))lastRecovery=0;
+  });
+  // RLS hides future announcements from regular users. Check only IDs/versions
+  // at the schedule boundary, fetching bodies only when the visible set changes.
+  const announcementScheduleTimer=window.setInterval(async()=>{
+    if(stopped)return;
+    const epoch=dataEpoch;await publishAnnouncements(epoch);
+    if((dataState.profile||window.conectaCurrentProfile)?.role!=="admin") {
+      const {data,error}=await supabase.from("global_announcements").select("id,updated_at");
+      if(stopped||epoch!==dataEpoch||error)return;
+      const signature=rows=>JSON.stringify((rows||[]).map(row=>[row.id,row.updated_at]).sort((a,b)=>a[0].localeCompare(b[0])));
+      if(signature(data)!==signature(dataState.announcements))request(["announcements"]);
+    }
+  },60_000);
+  const recoveryTimer=window.setInterval(()=>{if(document.visibilityState==="visible")recover();},5*60_000);
+  const onVisible=()=>{if(document.visibilityState==="visible")recover();};
+  const onFocus=()=>recover(),onOnline=()=>recover(true);
+  window.addEventListener("focus",onFocus);window.addEventListener("online",onOnline);document.addEventListener("visibilitychange",onVisible);
   const liveChannel = supabase.channel("conecta-presence", { config: { private: true, presence: { key: user.id } } })
     .on("presence", { event: "sync" }, () => {
       if (presenceChannel !== liveChannel) return;
@@ -155,7 +233,11 @@ function startDataSync(user) {
     });
   presenceChannel = liveChannel;
   stopDataSync = () => {
-    window.clearInterval(announcementScheduleTimer);
+    stopped=true;
+    window.clearInterval(announcementScheduleTimer);window.clearInterval(recoveryTimer);
+    window.removeEventListener("focus",onFocus);window.removeEventListener("online",onOnline);document.removeEventListener("visibilitychange",onVisible);
+    dataQueue?.stop();dataQueue=null;dataEpoch++;
+    activeHistory=null;
     supabase.removeChannel(channel);
     if (presenceChannel === liveChannel) presenceChannel = null;
     supabase.removeChannel(liveChannel);
@@ -170,86 +252,57 @@ function startDataSync(user) {
 }
 
 const loadReadReceipts = async conversationId => {
+  const owner=window.conectaCurrentUser?.id,generation=messageWatchGeneration;
+  if(!owner)return;
   const { data, error } = await supabase.from("conversation_reads").select("user_id,last_read_at").eq("conversation_id", conversationId);
   if (error) { console.warn("Could not load read receipts", error); return; }
+  if(owner!==window.conectaCurrentUser?.id||generation!==messageWatchGeneration)return;
   dispatch("conecta-read-receipts-sync", { conversationId, reads: data || [] });
 };
 
-const watchMessages = async (conversationId, callback) => {
-  const generation = ++messageWatchGeneration;
-  const previousChannel = activeMessageChannel;
-  activeMessageChannel = null;
-  if (previousChannel) await supabase.removeChannel(previousChannel);
-  const userId = window.conectaCurrentUser?.id;
-  const refresh = async () => {
-    const [{ data, error }, { data: hidden, error: hiddenError }] = await Promise.all([
-      supabase.from("messages").select("*").eq("conversation_id", conversationId).order("created_at"),
-      supabase.from("message_hidden_for").select("message_id").eq("user_id", userId)
-    ]);
-    if (generation !== messageWatchGeneration) return;
-    if (error) throw error;
-    if (hiddenError) throw hiddenError;
-    const hiddenIds = new Set((hidden || []).map(x => x.message_id));
-    const visible = (data || []).filter(x => !hiddenIds.has(x.id));
-    const gifIds = [...new Set(visible
-      .filter(x => x.attachment_path?.startsWith("giphy:"))
-      .map(x => x.attachment_path.slice("giphy:".length))
-      .filter(Boolean))];
-    const giphyUrls = new Map();
-    const apiKey = window.conectaGifConfig?.apiKey?.trim();
-    if (apiKey && gifIds.length) {
-      for (let offset = 0; offset < gifIds.length; offset += 100) {
-        const batch = gifIds.slice(offset, offset + 100);
-        try {
-          const params = new URLSearchParams({ api_key: apiKey, ids: batch.join(","), rating: "g" });
-          const response = await fetch("https://api.giphy.com/v1/gifs?" + params.toString(), { cache: "no-store" });
-          if (!response.ok) throw new Error("GIPHY returned " + response.status);
-          const payload = await response.json();
-          (payload.data || []).forEach(gif => {
-            const url = gif.images?.original?.url;
-            if (url) giphyUrls.set(gif.id, url);
-          });
-        } catch (error) { console.error("Could not resolve chat GIF batch", error); }
-      }
-    }
-    const withAttachments = await Promise.all(visible.map(async x => {
-      let attachmentUrl = x.attachment_url || "";
-      if (x.attachment_path?.startsWith("giphy:")) {
-        attachmentUrl = giphyUrls.get(x.attachment_path.slice("giphy:".length)) || "";
-      } else if (x.attachment_path?.startsWith("file:")) {
-        if (!x.deleted_at) {
-          const path = x.attachment_path.slice(5);
-          const { data: signed, error: signedError } = await supabase.storage.from("chat-files").createSignedUrl(path, 6 * 60 * 60, { download: x.attachment_name || "anexo" });
-          if (signedError) console.warn("Attachment URL unavailable", signedError);
-          attachmentUrl = signed?.signedUrl || "";
-        }
-      } else if (x.attachment_path) {
-        const { data: signed, error: signedError } = await supabase.storage.from("chat-media").createSignedUrl(x.attachment_path, 6 * 60 * 60);
-        if (signedError) console.error("Could not sign chat GIF", signedError);
-        attachmentUrl = signed?.signedUrl || "";
-      }
-      return { id: x.id, ...x, text: x.text, attachmentUrl, createdAt: x.created_at, replyTo: x.reply_to, editedAt: x.edited_at, deletedAt: x.deleted_at };
-    }));
-    if (generation !== messageWatchGeneration) return;
-    callback(withAttachments);
+async function decorateMessages(visible) {
+  const apiKey=window.conectaGifConfig?.apiKey?.trim(),now=Date.now();
+  const ids=[...new Set(visible.filter(row=>!row.deleted_at&&row.attachment_path?.startsWith("giphy:")).map(row=>row.attachment_path.slice(6)).filter(id=>!giphyUrlCache.has(id)||giphyUrlCache.get(id).expiresAt<=now))];
+  if(apiKey&&Date.now()>=giphyRetryAfter)for(let offset=0;offset<ids.length;offset+=100){
+    try{const params=new URLSearchParams({api_key:apiKey,ids:ids.slice(offset,offset+100).join(","),rating:"g"});
+      const response=await fetch("https://api.giphy.com/v1/gifs?"+params);
+      if(!response.ok){if(response.status===429)giphyRetryAfter=Date.now()+5*60_000;throw new Error("GIF unavailable");}
+      for(const gif of (await response.json()).data||[])if(gif.images?.original?.url)giphyUrlCache.set(gif.id,{url:gif.images.original.url,expiresAt:Date.now()+60*60_000});
+    }catch(error){console.warn(error);}
+  }
+  return Promise.all(visible.map(async x=>{
+    let attachmentUrl=x.deleted_at?"":(x.attachment_url||"");const path=x.attachment_path;
+    if(!x.deleted_at&&path?.startsWith("giphy:")) attachmentUrl=giphyUrlCache.get(path.slice(6))?.url||"";
+    else if(!x.deleted_at&&path?.startsWith("file:")) attachmentUrl=await signedUrl("chat-files",path.slice(5),6*60*60,{download:x.attachment_name||"anexo"});
+    else if(!x.deleted_at&&path)attachmentUrl=await signedUrl("chat-media",path,6*60*60);
+    return {...x,attachmentUrl,createdAt:x.created_at,replyTo:x.reply_to,editedAt:x.edited_at,deletedAt:x.deleted_at};
+  }));
+}
 
-  };
-  try { await refresh(); } catch (error) { console.error("Could not load conversation messages", error); return; }
-  if (generation !== messageWatchGeneration) return;
-  const refreshSafely = () => refresh().catch(error => console.error("Could not refresh conversation messages", error));
-  const channel = supabase.channel("messages-" + conversationId)
-    .on("postgres_changes", { event: "*", schema: "public", table: "messages", filter: "conversation_id=eq." + conversationId }, refreshSafely)
-    .on("postgres_changes", { event: "*", schema: "public", table: "message_hidden_for", filter: "user_id=eq." + userId }, refreshSafely)
-    .on("postgres_changes", { event: "*", schema: "public", table: "conversation_reads", filter: "conversation_id=eq." + conversationId }, () => loadReadReceipts(conversationId))
-    .subscribe(status => { if (status === "SUBSCRIBED") void loadReadReceipts(conversationId); });
-  void loadReadReceipts(conversationId);
-  activeMessageChannel = channel;
-  stopMessageSync = () => {
-    if (activeMessageChannel !== channel) return;
-    messageWatchGeneration++;
-    activeMessageChannel = null;
-    return supabase.removeChannel(channel);
-  };
+const watchMessages = async (conversationId, callback) => {
+  const userId=window.conectaCurrentUser?.id;
+  if(!userId)return;
+  if(activeHistory?.id===conversationId&&activeHistory.userId===userId){activeHistory.callback=callback;await activeHistory.controller.publish();return;}
+  const generation=++messageWatchGeneration;
+  const previous=activeMessageChannel;activeMessageChannel=null;activeHistory=null;
+  if(previous)await supabase.removeChannel(previous);
+  if(generation!==messageWatchGeneration||window.conectaCurrentUser?.id!==userId)return;
+  const current=()=>generation===messageWatchGeneration&&window.conectaCurrentUser?.id===userId;
+  const history={id:conversationId,userId,callback,controller:null};activeHistory=history;
+  const controller=window.conectaMessageHistory.createHistory({db:supabase,conversationId,userId,isCurrent:current,
+    emit:async rows=>{const decorated=await decorateMessages(rows);if(current())history.callback(decorated);}
+  });history.controller=controller;
+  const pending=[];
+  const changes=window.conectaSync.createQueue(async()=>{const batch=pending.splice(0);await controller.changes(batch);});
+  let subscribed=false,initialized=false;
+  const channel=supabase.channel("messages-"+conversationId)
+    .on("postgres_changes",{event:"*",schema:"public",table:"messages",filter:"conversation_id=eq."+conversationId},payload=>{if(!current())return;pending.push(payload);void changes.request(["messages"]).catch(error=>console.warn("Message update failed",error));})
+    .on("postgres_changes",{event:"*",schema:"public",table:"message_hidden_for",filter:"user_id=eq."+userId},()=>{if(current())void controller.hiddenChanged().catch(error=>console.warn(error));})
+    .on("postgres_changes",{event:"*",schema:"public",table:"conversation_reads",filter:"conversation_id=eq."+conversationId},()=>{if(current())void loadReadReceipts(conversationId);})
+    .subscribe(status=>{if(status==="SUBSCRIBED"&&current()){if(subscribed&&initialized)void controller.recover().catch(error=>console.warn(error));subscribed=true;void loadReadReceipts(conversationId);}});
+  activeMessageChannel=channel;
+  stopMessageSync=()=>{if(activeMessageChannel!==channel)return;messageWatchGeneration++;activeMessageChannel=null;activeHistory=null;changes.stop();return supabase.removeChannel(channel);};
+  try{await controller.start();initialized=true;}catch(error){console.error("Could not load messages",error);}
 };
 
 const authCompat = {
@@ -260,11 +313,17 @@ const authCompat = {
 
 window.conectaFirebase = {
   loadPersonalData,
+  getMessageHistoryState: id => activeHistory?.id===id ? activeHistory.controller.state() : null,
+  loadOlderMessages: id => activeHistory?.id===id ? activeHistory.controller.older() : Promise.resolve(),
+  loadLatestMessages: id => activeHistory?.id===id ? activeHistory.controller.latest() : Promise.resolve(),
+  ensureConversationMessageLoaded: (id,messageId) => activeHistory?.id===id ? activeHistory.controller.reveal(messageId) : Promise.resolve(false),
+  getReplyParent: (id,messageId) => activeHistory?.id===id ? activeHistory.controller.parent(messageId) : null,
+  refreshConversationMessages: id => activeHistory?.id===id ? activeHistory.controller.refresh() : Promise.resolve(),
   setTeamStatus: async (user, status, note = "") => {
     if (!["available", "busy", "meeting", "away"].includes(status) || note.length > 80) throw new Error("Status inválido.");
     const { error } = await supabase.from("team_status").upsert({ user_id: user.id, status, note: note.trim(), updated_at: new Date().toISOString() });
     if (error) throw error;
-    await loadPersonalData(user);
+    await loadPersonalData(user,["statuses"]);
   },
   setMessageFavorite: async (user, messageId, favorite) => {
     const query = favorite
@@ -272,7 +331,7 @@ window.conectaFirebase = {
       : supabase.from("message_favorites").delete().eq("user_id", user.id).eq("message_id", messageId);
     const { error } = await query;
     if (error) throw error;
-    await loadPersonalData(user);
+    await loadPersonalData(user,["favorites","hidden"]);
   },
   app: supabase, auth: authCompat, db: supabase, config: { projectId: "fmyenjfzdwizpgretpkk" },
   signInWithEmailAndPassword: (_auth, email, password) => supabase.auth.signInWithPassword({ email, password }),
@@ -292,7 +351,7 @@ window.conectaFirebase = {
     profilePhotoUrlCache.set(path, { url: avatarUrl, expiresAt: Date.now() + 11 * 60 * 60 * 1000 });
     if (window.conectaCurrentProfile) window.conectaCurrentProfile.avatar_url = avatarUrl;
     dispatch("conecta-profile-photo-sync", { id: user.id, avatar_url: avatarUrl });
-    await loadData(user);
+    await loadData(user,["photos"]);
     return avatarUrl;
   },
   uploadChatFile: async (user, conversationId, file) => {
@@ -386,12 +445,12 @@ window.conectaFirebase = {
       throw error;
     }
     if (oldRow?.image_path && oldRow.image_path !== imagePath) await supabase.storage.from("global-announcements").remove([oldRow.image_path]);
-    await loadData(user);
+    await loadData(user,["announcements"]);
   },
   setGlobalAnnouncementActive: async (user, id, isActive) => {
     const { error } = await supabase.from("global_announcements").update({ is_active: isActive, updated_by: user.id, updated_at: new Date().toISOString() }).eq("id", id);
     if (error) throw error;
-    await loadData(user);
+    await loadData(user,["announcements"]);
   },
   deleteGlobalAnnouncement: async (user, id) => {
     const { data: record, error: readError } = await supabase.from("global_announcements").select("image_path").eq("id", id).maybeSingle();
@@ -399,7 +458,7 @@ window.conectaFirebase = {
     const { error } = await supabase.from("global_announcements").delete().eq("id", id);
     if (error) throw error;
     if (record?.image_path) await supabase.storage.from("global-announcements").remove([record.image_path]);
-    await loadData(user);
+    await loadData(user,["announcements"]);
   },
   addNotice: async (user, data) => { const { error } = await supabase.from("notices").insert({ title: data.title, sector: data.sector, tag: data.tag || "NOVO", body: data.text, author_id: user.id }); if (error) throw error; },
   updateNotice: async (id, data) => { const { error } = await supabase.from("notices").update({ title: data.title, body: data.text, sector: data.sector }).eq("id", id); if (error) throw error; },
@@ -448,14 +507,14 @@ window.conectaFirebase = {
       : supabase.from("conversations").insert({ ...values, kind: "channel", sector: "Geral", managed_channel: true, created_by: user.id });
     const { data, error } = await query.select("id").single();
     if (error) throw error;
-    if (window.conectaCurrentUser?.id === user.id) await loadData(user).catch(error => console.warn("Channel saved; refresh pending", error));
+    if (window.conectaCurrentUser?.id === user.id) await loadData(user,["conversations","unread"]).catch(error => console.warn("Channel saved; refresh pending", error));
     return data.id;
   },
   ensureChannel: async (user, name) => { let { data: existing } = await supabase.from("conversations").select("id").eq("kind", "channel").eq("managed_channel", false).eq("name", name).maybeSingle(); if (existing) return existing.id; const { data } = await supabase.from("conversations").insert({ kind: "channel", name, sector: name, created_by: user.id }).select("id").single(); return data.id; },
   startDirectConversation: async (user, otherUserId) => {
     const { data, error } = await supabase.rpc("start_direct_conversation", { p_other_user_id: otherUserId });
     if (error) throw error;
-    await loadData(user);
+    await loadData(user,["conversations","unread"]);
     return data;
   },
   loadReadReceipts,
@@ -463,9 +522,7 @@ window.conectaFirebase = {
     if (!user?.id || !seenAt) return;
     const { error } = await supabase.rpc("mark_conversation_seen", { p_conversation_id: conversationId, p_seen_at: seenAt });
     if (error) throw error;
-    const { data, error: unreadError } = await supabase.rpc("get_unread_counts");
-    if (unreadError) throw unreadError;
-    dispatch("conecta-unread-sync", Object.fromEntries((data || []).map(row => [row.conversation_id, Number(row.unread_count) || 0])));
+    if(window.conectaCurrentUser?.id===user.id)await loadData(user,["unread"]);
   },
   watchMessages,
   searchMessages: async query => {
@@ -494,7 +551,12 @@ window.conectaFirebase = {
 
 supabase.auth.onAuthStateChange(async (_event, session) => {
   const user = session?.user;
-  if (activeAuthUserId !== (user?.id || null)) { personalDataGeneration++; dispatch("conecta-auth-session-reset"); }
+  const changedAccount=activeAuthUserId !== (user?.id || null);
+  if (changedAccount) {
+    personalDataGeneration++;dataEpoch++;dataOwner=null;dataQueue?.stop();dataQueue=null;dataState={};
+    signedUrlCache.clear();giphyUrlCache.clear();profilePhotoUrlCache.clear();
+    stopDataSync();dispatch("conecta-auth-session-reset");
+  }
   activeAuthUserId = user?.id || null;
   window.conectaCurrentUser = user || null;
   document.querySelector("#authScreen")?.classList.toggle("visible", !user);
@@ -502,9 +564,11 @@ supabase.auth.onAuthStateChange(async (_event, session) => {
   document.querySelector("#authLoading")?.classList.remove("visible");
   if (user) {
     const profile = await ensureUserProfile(user);
+    if(window.conectaCurrentUser?.id!==user.id)return;
     window.conectaCurrentProfile = profile;
     dispatch("conecta-profile-ready", profile);
-    startDataSync(user);
+    if(changedAccount||!dataQueue)startDataSync(user);
+    else void loadData(user,["profile","directory","users"]);
     const label = profile.name || user.user_metadata?.name || user.email?.split("@")[0] || "Colaborador";
     document.querySelector("#currentUserName")?.replaceChildren(document.createTextNode(label));
     const initials = label.split(/[ ._-]+/).map(x => x[0]).join("").slice(0, 2).toUpperCase();

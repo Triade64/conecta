@@ -1,12 +1,12 @@
 const {test}=require('node:test');
 const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('node:fs');
 const source=fs.readFileSync(require('node:path').join(__dirname,'../supabase-app.js'),'utf8');
-const start=source.slice(source.indexOf('function startDataSync(user)'),source.indexOf('const watchMessages ='));
+const start=source.slice(source.indexOf('function startDataSync(user)'),source.indexOf('const loadReadReceipts ='));
 function setup(){
  const events=[],channels=[];
  const supabase={channel(name){const c={name,handlers:{},state:{},on(type,{event},cb){this.handlers[type+':'+event]=cb;return this},subscribe(cb){this.subscription=cb;return this},presenceState(){return this.state},track:async()=> 'ok'};channels.push(c);return c},removeChannel(){}};
- const context={supabase,window:{setInterval:()=>1,clearInterval(){}},loadData(){},dispatch:(name,detail)=>events.push({name,detail}),dispatchIncomingMessageNotification(){},console};
- vm.createContext(context);vm.runInContext('let stopDataSync=()=>{},stopMessageSync=()=>{},presenceChannel=null,messageWatchGeneration=0,activeMessageChannel=null;'+start+';globalThis.start=startDataSync;globalThis.stop=()=>stopDataSync();',context);context.start({id:'a'});
+ const context={supabase,window:{setInterval:()=>1,clearInterval(){},addEventListener(){},removeEventListener(){}},document:{addEventListener(){},removeEventListener(){}},loadData:async()=>{},allGroups:[],publishAnnouncements:async()=>{},dispatch:(name,detail)=>events.push({name,detail}),dispatchIncomingMessageNotification(){},console};
+ vm.createContext(context);vm.runInContext('let stopDataSync=()=>{},stopMessageSync=()=>{},presenceChannel=null,messageWatchGeneration=0,activeMessageChannel=null,activeHistory=null,dataQueue=null,dataEpoch=0;'+start+';globalThis.start=startDataSync;globalThis.stop=()=>stopDataSync();',context);context.start({id:'a'});
  return {events,context,channel:channels.find(c=>c.name==='conecta-presence')};
 }
 test('presence publishes one user per key across multiple app sessions',()=>{const s=setup();s.channel.state={a:[{userId:'a'},{userId:'a'}],b:[{userId:'b'}],empty:[]};s.channel.handlers['presence:sync']();const event=s.events.find(e=>e.name==='conecta-presence-sync');assert.deepEqual(JSON.parse(JSON.stringify(event.detail)),{userIds:['a','b'],ready:true});assert.equal(s.events.find(e=>e.name==='conecta-online-count-sync').detail,2);});

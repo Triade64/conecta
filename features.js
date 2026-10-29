@@ -80,6 +80,7 @@
     selectedContact = contactIndex;
     hideGlobalSearch();
     if (messageId) {
+      let requestedHistory = false;
       const findAndFocus = remaining => {
         const box = byId("chatMessages");
         const bubble = [...(box?.querySelectorAll(".bubble") || [])].find(item => item.dataset.messageId === messageId);
@@ -87,7 +88,13 @@
           bubble.scrollIntoView({ behavior: "smooth", block: "center" });
           bubble.classList.add("search-result-highlight");
           setTimeout(() => bubble.classList.remove("search-result-highlight"), 2500);
-        } else if (remaining > 0) setTimeout(() => findAndFocus(remaining - 1), 150);
+        } else if (remaining > 0) {
+          const fb=window.conectaFirebase;
+          if (!requestedHistory && fb?.getMessageHistoryState?.(contact.firestoreId)) {
+            requestedHistory=true;
+            fb.ensureConversationMessageLoaded(contact.firestoreId,messageId).then(found=>{if(found)findAndFocus(remaining-1);else showToast("Esta mensagem não está mais disponível.");}).catch(showError);
+          } else setTimeout(() => findAndFocus(remaining - 1), 150);
+        }
       };
       setTimeout(() => findAndFocus(30), 100);
     }
@@ -411,6 +418,7 @@
   };
   const refreshMessages = async conversation => {
     const fb = window.conectaFirebase;
+    if(fb.getMessageHistoryState?.(conversation.firestoreId)){await fb.refreshConversationMessages(conversation.firestoreId);return;}
     await fb.watchMessages(conversation.firestoreId, messages => {
       conversation.messages = messages.map(message => ({
         id: message.id,
@@ -1116,7 +1124,7 @@
       if (!message.deletedAt) window.conectaChatContent.linkify(bubble);
 
       if (message.replyTo && !stack.querySelector(".reply-quote")) {
-        const parent = raw.find(row => row.id === message.replyTo);
+        const parent = raw.find(row => row.id === message.replyTo) || window.conectaFirebase?.getReplyParent?.(conversation.firestoreId,message.replyTo);
         const quote = document.createElement("div");
         quote.className = "reply-quote";
         quote.textContent = parent
@@ -1221,6 +1229,7 @@
       preview.append(text, close);
       chat.insertBefore(preview, composer);
     }
+    window.conectaHistoryUI?.mount(box,conversation.firestoreId);
     box.scrollTop = box.scrollHeight;
     window.conectaDrafts?.afterRender(conversation.firestoreId, draftState);
   };

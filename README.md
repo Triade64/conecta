@@ -78,3 +78,13 @@ Cole textos, links e dados de planilhas com Ctrl+V. O chat preserva quebras de l
 ## Emojis no chat
 
 O botão 😀 abre 748 emojis Unicode em nove categorias: Mais usados, Carinhas e emoções, Gestos e pessoas, Corações e celebrações, Trabalho e objetos, Comidas e bebidas, Animais e natureza, Viagens e atividades e Símbolos e sinais. Troque a categoria no seletor acima dos emojis. Os emojis são inseridos no cursor, preservando o rascunho. O painel tem rolagem própria e se ajusta à área da conversa.
+
+## Redução de tráfego do Supabase
+
+O chat carrega as últimas 50 mensagens e oferece **Carregar mensagens anteriores** no topo da conversa. A paginação usa data e ID para não duplicar nem pular mensagens com o mesmo horário. Novos eventos consultam apenas os IDs alterados, sem baixar todo o histórico. Buscar uma mensagem antiga ou abrir um favorito carrega uma janela limitada ao redor do registro; **Voltar às mensagens recentes** retorna ao fim da conversa.
+
+As atualizações de cada tabela recarregam somente os dados relacionados, agrupando eventos próximos. O agendamento dos avisos é avaliado localmente a cada minuto. Para colaboradores, uma consulta leve de IDs e versões detecta avisos que ficaram visíveis por horário; o texto e as imagens só são recuperados quando essa lista muda. Uma sincronização de recuperação ocorre ao reconectar, ao voltar ao aplicativo (com intervalo mínimo de um minuto) e a cada cinco minutos enquanto visível. A troca de conta limpa o estado da sessão. Alterações de perfil fazem uma recuperação completa das permissões.
+
+URLs assinadas de anexos e avisos são reutilizadas em memória durante sua validade, com margem para renovação. Fotos e GIFs também reaproveitam resultados. Os arquivos continuam privados; as consultas continuam sujeitas a RLS e não foi alterada nenhuma política no banco. `supabase/efficient-sync-realtime.sql` habilita eventos das fotos e dos avisos globais na publicação Realtime. As otimizações reduzem transferências futuras, sem apagar mensagens ou diminuir o volume já contabilizado no ciclo atual.
+
+Validação: `node --test tests/*.test.cjs` inclui paginação, eventos incrementais, reconexão, isolamento de sessão, filas de atualização e cache.

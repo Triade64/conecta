@@ -1,0 +1,1 @@
+.message-history-controls{display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px 16px;padding:8px 4px;flex:0 0 auto}.message-history-controls span{width:100%;text-align:center;font-size:11px;color:var(--muted)}.message-history-controls button{padding:7px 10px;white-space:normal}.message-history-controls button:disabled{opacity:.6;cursor:wait}
