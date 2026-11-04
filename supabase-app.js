@@ -311,6 +311,8 @@ const authCompat = {
   signOut: () => supabase.auth.signOut()
 };
 
+if (window.conectaWorkflowAPI) window.conectaWorkflows = window.conectaWorkflowAPI.create(supabase, () => window.conectaCurrentUser);
+
 window.conectaFirebase = {
   loadPersonalData,
   getMessageHistoryState: id => activeHistory?.id===id ? activeHistory.controller.state() : null,

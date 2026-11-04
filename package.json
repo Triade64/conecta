@@ -7,6 +7,10 @@
   },
   "scripts": {
     "build": "node scripts/build.cjs",
-    "test:config": "node --test tests/environment-config.test.cjs"
+    "test:config": "node --test tests/environment-config.test.cjs",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "0.5.15"
   }
 }
