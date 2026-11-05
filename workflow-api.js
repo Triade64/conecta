@@ -7,7 +7,7 @@
    templates:()=>checked(db.from('workflow_template_catalog').select('id,name,version,definition,created_at').order('name')),
    overview:()=>checked(db.rpc('workflow_overview')),
    processes:(page=0,sector='')=>{let q=db.from('workflow_processes').select('id,name,company,period,legal_due_at,completed_at,created_at,revision,sectors,member_ids,template_id').order('created_at',{ascending:false}).order('id',{ascending:false});if(sector)q=q.contains('sectors',[sector]);return checked(q.range(page*50,page*50+49));},
-   activities:(sector,page=0)=>{let q=db.from('workflow_steps').select('*').in('status',['ready','active','blocked','correction']).order('due_at').order('id');if(sector)q=q.eq('sector',sector);return checked(q.range(page*100,page*100+99));},
+   activities:(sector,page=0)=>{let q=db.from('workflow_steps').select('*,process:workflow_processes(company,period)').in('status',['ready','active','blocked','correction']).order('due_at').order('id');if(sector)q=q.eq('sector',sector);return checked(q.range(page*100,page*100+99));},
    async steps(ids,summary=false){
     if(!ids.length)return [];const rows=[];
     for(let offset=0;;offset+=500){const page=await checked(db.from('workflow_steps').select(summary?'id,process_id,key,sector,status,due_at,available_at,completed_at,definition':'*').in('process_id',ids).order('id').range(offset,offset+499));rows.push(...page);if(page.length<500)return rows;}

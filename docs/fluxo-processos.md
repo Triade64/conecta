@@ -1,6 +1,6 @@
 # Fluxo de Processos — implementação e homologação
 
-**Status: preparado para revisão; não aplicado à produção.** A branch `feat/fluxo-processos` inclui a interface, a migração e os testes. Nenhuma migração deste módulo deve ser executada no projeto de produção sem autorização.
+**Status: interface em revisão no PR #3.** A estrutura do banco e o agendador foram instalados no Supabase após autorizações específicas. A simplificação visual ainda não foi publicada em produção. A branch `feat/fluxo-processos` inclui a interface, a migração e os testes. Nenhuma migração deste módulo deve ser executada no projeto de produção sem autorização.
 
 ## Arquitetura encontrada
 
@@ -18,7 +18,7 @@ A implementação adiciona um módulo independente e mantém os dados existentes
 
 ## Funcionamento
 
-O administrador abre **Fluxo de Processos → Modelos → Usar exemplo do Fator R**, revisa o modelo e salva. O exemplo é um modelo de dados editável, não uma regra fixa do motor. Depois, **Novo processo** solicita empresa, competência, prazo de referência opcional, condições e restrição opcional de participantes.
+O administrador abre **Fluxo de Processos → Configurar → Modelos de processo → Usar exemplo do Fator R**, revisa o modelo e salva. O exemplo é um modelo de dados editável, não uma regra fixa do motor. Depois, **Novo processo** solicita empresa, competência, prazo de referência opcional, condições e restrição opcional de participantes.
 
 O modelo permite etapas em paralelo: duas etapas podem ter as mesmas dependências, e uma terceira pode depender de ambas. Dependências são sempre um grafo sem ciclos. Uma condição compara um campo do contexto do cliente com um valor configurado. Uma etapa dispensada por condição só libera suas dependentes depois de suas próprias dependências terminarem.
 
@@ -80,3 +80,13 @@ PLAYWRIGHT_MODULE=/caminho/para/playwright CHROMIUM_PATH=/caminho/para/chromium 
 ```
 
 Ele cria o modelo pela interface, executa o fluxo inteiro com mudança de usuário/setor, devolução, bloqueio de campos ausentes e dois anexos. Confere também o painel em 1366×768, 1024×600, 768×600 e 390×844, e o editor no tema escuro em tela pequena. As chamadas de dados são substituídas por uma ponte de teste para o PostgreSQL local: não há mensagens nem uploads reais.
+
+## Interface simplificada
+
+A abertura mostra somente Processos, Tarefas do setor e Avisos. O resumo de indicadores fica recolhido, e modelos/repetições ficam em Configurar para o administrador. A lista começa pelos processos em andamento, com empresa, competência, próximo setor responsável e prazo. É possível filtrar concluídos e todos os registros da página.
+
+Na primeira abertura sem modelos, Novo processo oferece preparar o exemplo Fiscal/DP com um clique. Depois bastam tipo de processo, empresa e competência; prazo final e restrições de acesso são opcionais e recolhidos. A configuração não é criada sem o clique explícito do administrador.
+
+O detalhe destaca a próxima ação, mostra o caminho da entrega e abre apenas a etapa atual do setor. Assumir/retomar, preencher e encaminhar são as ações principais; rascunho, documentos e entrega anterior permanecem disponíveis. Solicitação de informação, devolução e impedimento estão em Preciso de ajuda ou de uma correção. Histórico e etapas anteriores ficam recolhidos. Atualizações em segundo plano preservam o formulário e só exibem aviso quando a revisão do processo realmente mudou.
+
+O editor de modelos abre uma etapa por vez inicialmente e recolhe identificadores, condições, dependências personalizadas e notificações em ajustes avançados. A API, as permissões e a validação transacional do motor não foram alteradas. O cliente de tarefas passou a incluir empresa e competência na mesma consulta por meio do relacionamento existente.
