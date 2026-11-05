@@ -28,6 +28,12 @@
       return false;
     }
   };
+  window.addEventListener('conecta-workflow-notification', event => {
+    const n = event.detail;
+    if (!n?.process_id) return;
+    showBrowserNotification('Fluxo de Processos', n.message, 'workflow-' + n.id, false,
+      () => window.conectaOpenProcess?.(n.process_id));
+  });
   const setProfileAvatar = (element, url, label = "") => {
     if (!element) return;
     element.setAttribute("aria-label", label || "Foto do perfil");
