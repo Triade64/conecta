@@ -37,7 +37,7 @@
     const [t, c, m] = await Promise.all([
       api.from('tasks').select('*').order('updated_at', { ascending: false }).limit(500),
       api.from('task_clients').select('id,name,document,active').order('name'),
-      api.from('task_templates').select('id,name,steps,active').order('name')
+      api.from('task_templates').select('id,name,steps,active,created_by').order('name')
     ]);
     if (mine !== generation) return;
     if (t.error || c.error || m.error) { console.warn('Tarefas: falha ao carregar', t.error || c.error || m.error); return; }
@@ -84,7 +84,7 @@
 
   function newTaskDialog() {
     const active = templates.filter(t => t.active);
-    if (!active.length) { toast(ctx().admin ? 'Cadastre um modelo de fluxo antes de criar tarefas.' : 'Nenhum modelo de fluxo cadastrado. Peça a um administrador.'); if (ctx().admin) templatesDialog(); return; }
+    if (!active.length) { toast('Cadastre um modelo de fluxo antes de criar tarefas.'); templatesDialog(); return; }
     const clientOptions = clients.filter(c => c.active).map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
     const d = openDialog(`<h2>Nova tarefa</h2><form novalidate>
       <div class="field"><label for="ntClient">Cliente</label><div class="tasks-inline"><select id="ntClient" required><option value="">Selecione…</option>${clientOptions}</select><button class="secondary" type="button" id="ntNewClient">Novo cliente</button></div></div>
@@ -176,7 +176,7 @@
       const host = d.querySelector('.tasks-detail');
       const item = editing && templates.find(t => t.id === editing);
       host.innerHTML = `<div class="tasks-head"><div><h2>Modelos de fluxo</h2><p>Cada modelo define a sequência de setores de uma atividade.</p></div><button class="text-btn" type="button" data-close aria-label="Fechar">✕</button></div>
-        <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector).join(' → '))}</small></div><button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button></li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
+        <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector).join(' → '))}</small></div>${ctx().admin || t.created_by === ctx().userId ? `<button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button>` : ''}</li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
         <form novalidate><h3>${item ? 'Editar modelo' : 'Novo modelo'}</h3>
         <div class="field"><label for="tmName">Nome da atividade</label><input id="tmName" maxlength="120" value="${esc(item?.name || '')}"></div>
         <div class="field"><label for="tmSteps">Etapas, uma por linha: setor | descrição opcional</label><textarea id="tmSteps" rows="5" placeholder="Dpto. Fiscal | Apurar impostos\nDpto. Contábil | Fechamento">${esc(item ? flow.stepsToText(item.steps) : '')}</textarea><small>Setores usuais: ${SECTORS.join(', ')}. O nome precisa ser igual ao setor cadastrado no perfil dos colaboradores. Tarefas já criadas mantêm a sequência original.</small></div>
@@ -207,7 +207,7 @@
   function renderTasks() {
     const c = ctx(), views = flow.VIEWS.filter(v => v !== 'all' || c.admin);
     if (!views.includes(filters.view)) filters.view = 'inbox';
-    document.getElementById('viewPanel').innerHTML = `<div class="view-toolbar"><div><h2>Tarefas entre setores</h2><p>Acompanhe o fluxo de cada cliente, de etapa em etapa.</p></div><div class="tasks-toolbar-actions">${c.admin ? '<button class="secondary" type="button" id="taskTemplatesBtn">Modelos de fluxo</button>' : ''}<button class="primary" type="button" id="taskNewBtn">+ Nova tarefa</button></div></div>
+    document.getElementById('viewPanel').innerHTML = `<div class="view-toolbar"><div><h2>Tarefas entre setores</h2><p>Acompanhe o fluxo de cada cliente, de etapa em etapa.</p></div><div class="tasks-toolbar-actions"><button class="secondary" type="button" id="taskTemplatesBtn">Modelos de fluxo</button><button class="primary" type="button" id="taskNewBtn">+ Nova tarefa</button></div></div>
       <div class="tasks-tabs" role="tablist">${views.map(v => `<button type="button" role="tab" data-tview="${v}" aria-selected="${filters.view === v}">${VIEW_LABEL[v]} <span class="count" data-tcount="${v}"></span></button>`).join('')}</div>
       <div class="tasks-filters"><div class="field"><label for="tfTerm">Pesquisar</label><input id="tfTerm" type="search" placeholder="Cliente, título ou fluxo" value="${esc(filters.term)}"></div>
       <div class="field"><label for="tfStatus">Situação</label><select id="tfStatus"><option value="">Todas</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>

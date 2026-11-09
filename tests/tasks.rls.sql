@@ -30,16 +30,22 @@ values (current_setting('tfx.client_id')::uuid,'Cliente teste '||current_setting
 
 set local role authenticated;
 
--- Colaborador comum não cadastra modelo de fluxo.
+-- Qualquer colaborador cria modelo; outro colaborador não edita o modelo alheio.
 select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
-do $$
-begin
-  begin
-    insert into public.task_templates(name,steps) values ('Modelo proibido','[{"sector":"Fiscal"}]'::jsonb);
-    raise exception 'FAIL: colaborador criou modelo';
-  exception when insufficient_privilege or others then
-    if sqlerrm like 'FAIL:%' then raise; end if;
-  end;
+insert into public.task_templates(name,steps) values ('Modelo do colaborador '||current_setting('tfx.template_id'),'[{"sector":"Fiscal"}]'::jsonb);
+select set_config('request.jwt.claim.sub',current_setting('tfx.fiscal_id'),true);
+update public.task_templates set name='Alterado por outro' where name='Modelo do colaborador '||current_setting('tfx.template_id');
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
+do $$ begin
+  if not exists (select 1 from public.task_templates where name='Modelo do colaborador '||current_setting('tfx.template_id')) then
+    raise exception 'FAIL: outro colaborador alterou modelo alheio';
+  end if;
+end $$;
+update public.task_templates set active=false where name='Modelo do colaborador '||current_setting('tfx.template_id');
+do $$ begin
+  if (select active from public.task_templates where name='Modelo do colaborador '||current_setting('tfx.template_id')) then
+    raise exception 'FAIL: criador não editou o próprio modelo';
+  end if;
 end $$;
 -- Colaborador comum cadastra cliente (somente nome e documento).
 insert into public.task_clients(name) values ('Cliente criado pelo colaborador');
