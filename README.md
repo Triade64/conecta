@@ -24,6 +24,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 10. `supabase/profile-photos.sql`
 11. `supabase/chat-gif-attachments.sql`
 12. `supabase/kitchen-calendar.sql`
+13. `supabase/tasks.sql` (fluxo de tarefas entre setores)
 
 ## Calendário do escritório
 
@@ -70,6 +71,18 @@ Em **Administração → Canais e membros → Criar canal**, informe o nome e se
 Os canais personalizados aparecem na lateral, em Conversas e como destino em Nova mensagem/Encaminhar. Os canais de setor continuam com suas permissões atuais. A migração `supabase/managed-channels.sql` deve ser aplicada depois dos scripts existentes. As políticas restringem mensagens, anexos e pontos de leitura aos membros, inclusive para administradores. A verificação SQL `tests/managed-channels.rls.sql` cria fixtures apenas dentro de uma transação que termina em rollback.
 
 Os participantes da louça (lavar e secar) e da varrição são configurados em listas separadas em **Calendário → Configurar rodízio**. Cada lista segue sua própria ordem alfabética; a louça exige pelo menos duas pessoas e a varrição pode ter uma. Deixar uma lista vazia desativa a tarefa. Configurações antigas mantêm os participantes atuais até o administrador editar as listas. As turmas do café continuam independentes. Em Ajustar dia, as opções de substituição respeitam a lista da tarefa.
+
+## Tarefas entre setores
+
+A aba **Tarefas** controla o fluxo de uma atividade, para um cliente, entre setores. Qualquer colaborador ativo cria tarefas; cada tarefa pertence a um cliente e segue um **modelo de fluxo**: uma sequência de etapas, cada uma com um setor (por exemplo, Atendimento → Fiscal → Contábil).
+
+- **Modelos de fluxo** (administradores, botão *Modelos de fluxo*): informe o nome da atividade e as etapas, uma por linha, no formato `Setor | descrição opcional`. O nome do setor deve ser igual ao campo *setor* do perfil dos colaboradores (acentos e caixa são ignorados). A tarefa copia a sequência ao ser criada; editar o modelo depois não altera tarefas em andamento.
+- **Andamento**: somente o setor da etapa atual (ou um administrador) pode **repassar** para a próxima etapa ou **devolver** à anterior com motivo. Repassar na última etapa conclui a tarefa. O criador ou um administrador pode **cancelar** com motivo. Quem enxerga a tarefa pode comentar. Cada movimentação fica no histórico, com autor e horário.
+- **Visões**: *Minha caixa* (tarefas na vez do seu setor), *Do meu setor* (todas em que o setor participa), *Enviadas por mim* e *Todas* (somente administradores), com filtros por situação, etapa, prioridade, atraso e busca por cliente ou título. O contador no menu mostra a caixa do seu setor.
+- **Clientes**: escolha na lista ou use *Novo cliente* ao criar a tarefa (nome e CNPJ/CPF opcional). Ainda não há tela para editar ou inativar clientes; administradores já têm essa permissão no banco.
+- **Segurança**: as tabelas só aceitam leitura direta; todas as mudanças passam pelas funções `task_create`, `task_advance`, `task_return`, `task_cancel` e `task_comment`, que validam setor, sequência e versão (alterações simultâneas são recusadas). Visibilidade: criador, setores que participam do fluxo e administradores. As atualizações chegam em tempo real.
+
+Validação: `node --test tests/tasks-flow.test.cjs` (lógica) e `tests/tasks.rls.sql` (permissões e fluxo no banco; roda em transação com rollback e exige um administrador e quatro outros perfis ativos).
 
 ## Links e colagem no chat
 

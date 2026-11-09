@@ -311,6 +311,9 @@ const authCompat = {
   signOut: () => supabase.auth.signOut()
 };
 
+// Cliente autenticado para o módulo de tarefas (tasks.js). As permissões continuam no RLS e nas funções task_*.
+window.conectaTasksApi = { client: () => supabase };
+
 window.conectaFirebase = {
   loadPersonalData,
   getMessageHistoryState: id => activeHistory?.id===id ? activeHistory.controller.state() : null,
