@@ -21,14 +21,16 @@ update public.profiles set sector='Fiscal' where id=(select fiscal_id from task_
 update public.profiles set sector='Contábil' where id=(select contab_id from task_fx);
 update public.profiles set sector='Setor Externo Teste' where id=(select outsider_id from task_fx);
 
-set local role authenticated;
-
--- Administrador cadastra o modelo; colaborador comum não consegue.
-select set_config('request.jwt.claim.sub',(select admin_id::text from task_fx),true);
+-- Fixtures criadas como dono (a coluna id não é gravável pelo papel authenticated).
 insert into public.task_templates(id,name,steps)
 select template_id,'Teste '||template_id,
   '[{"sector":"Atendimento"},{"sector":"Fiscal"},{"sector":"Contábil","label":"Fechamento"}]'::jsonb from task_fx;
+insert into public.task_clients(id,name,created_by)
+select client_id,'Cliente teste '||client_id,atend_id from task_fx;
 
+set local role authenticated;
+
+-- Colaborador comum não cadastra modelo de fluxo.
 select set_config('request.jwt.claim.sub',(select atend_id::text from task_fx),true);
 do $$
 begin
@@ -39,7 +41,8 @@ begin
     if sqlerrm like 'FAIL:%' then raise; end if;
   end;
 end $$;
-insert into public.task_clients(id,name) select client_id,'Cliente teste '||client_id from task_fx;
+-- Colaborador comum cadastra cliente (somente nome e documento).
+insert into public.task_clients(name) values ('Cliente criado pelo colaborador');
 
 do $$
 declare t uuid; v integer;
