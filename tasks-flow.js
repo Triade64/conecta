@@ -3,7 +3,7 @@
   // As regras definitivas ficam no banco (supabase/tasks.sql); aqui só decidimos
   // o que mostrar e quais botões habilitar.
   const FROM = 'áàâãäéèêëíìîïóòôõöúùûüç', TO = 'aaaaaeeeeiiiiooooouuuuc';
-  const sectorKey = value => String(value ?? '').trim().toLowerCase().replace(/./g, c => { const i = FROM.indexOf(c); return i < 0 ? c : TO[i]; });
+  const sectorKey = value => { const k = String(value ?? '').trim().toLowerCase().replace(/./g, c => { const i = FROM.indexOf(c); return i < 0 ? c : TO[i]; }).replace(/^(departamento|dpto|depto|dep)\.?\s*(de\s+)?/, '').trim(); return ['administrador', 'administracao', 'adm'].includes(k) ? 'administracao' : k; };
   const stepAt = (task, index) => (task.steps || [])[index] || null;
   const currentStep = task => stepAt(task, task.current_step);
   const progress = task => ({

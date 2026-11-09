@@ -14,8 +14,15 @@ const admin = { userId: 'u-admin', sector: 'Administração', admin: true };
 
 test('sectorKey ignora acentos, caixa e espaços', () => {
   assert.equal(flow.sectorKey('  Contábil '), 'contabil');
-  assert.equal(flow.sectorKey('Departamento Pessoal'), 'departamento pessoal');
+  assert.equal(flow.sectorKey('Departamento Pessoal'), 'pessoal');
   assert.equal(flow.sectorKey(null), '');
+});
+
+test('sectorKey trata Dpto./Departamento e Administrador como o mesmo setor', () => {
+  for (const s of ['Dpto. Contábil', 'Depto Contabil', 'Departamento Contábil', 'Departamento de Contábil', 'contábil']) assert.equal(flow.sectorKey(s), 'contabil');
+  assert.equal(flow.sectorKey('Dpto. Pessoal'), flow.sectorKey('Departamento Pessoal'));
+  assert.equal(flow.sectorKey('Administrador'), flow.sectorKey('Administração'));
+  assert.equal(flow.sectorKey('Atendimento'), 'atendimento');
 });
 
 test('apenas o setor da etapa atual pode repassar; admin sempre pode', () => {

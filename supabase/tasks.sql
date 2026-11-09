@@ -8,7 +8,12 @@ begin;
 -- Normaliza o nome do setor: minúsculas, sem acentos nem espaços nas pontas.
 create or replace function private.sector_key(p_sector text)
 returns text language sql immutable set search_path = ''
-as $$ select translate(lower(btrim(coalesce(p_sector, ''))), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'); $$;
+as $$
+  select case when k in ('administrador', 'administracao', 'adm') then 'administracao' else k end
+  from (select btrim(regexp_replace(
+          translate(lower(btrim(coalesce(p_sector, ''))), 'áàâãäéèêëíìîïóòôõöúùûüç', 'aaaaaeeeeiiiiooooouuuuc'),
+          '^(departamento|dpto|depto|dep)\.?\s*(de\s+)?', '')) as k) s;
+$$;
 
 -- Setor normalizado do usuário ativo; nulo quando inativo ou sem perfil.
 create or replace function private.my_sector_key()
