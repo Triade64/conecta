@@ -2,36 +2,36 @@
 -- inclusive os setores temporários dados aos perfis de teste.
 -- Requer: um administrador ativo e quatro outros perfis ativos.
 -- Uso: execute no SQL Editor do Supabase (ou psql). Sucesso = termina sem erro.
+-- Os IDs ficam em variáveis de sessão (tfx.*), visíveis após a troca de papel.
 begin;
-create temporary table task_fx as
-select (select id from public.profiles where active and role='admin' order by id limit 1) as admin_id,
-       (select id from public.profiles where active and role<>'admin' order by id limit 1) as atend_id,
-       (select id from public.profiles where active and role<>'admin' order by id offset 1 limit 1) as fiscal_id,
-       (select id from public.profiles where active and role<>'admin' order by id offset 2 limit 1) as contab_id,
-       (select id from public.profiles where active and role<>'admin' order by id offset 3 limit 1) as outsider_id,
-       gen_random_uuid() as template_id, gen_random_uuid() as client_id;
-grant select on task_fx to authenticated;
+select set_config('tfx.admin_id',(select id::text from public.profiles where active and role='admin' order by id limit 1),true),
+       set_config('tfx.atend_id',(select id::text from public.profiles where active and role<>'admin' order by id limit 1),true),
+       set_config('tfx.fiscal_id',(select id::text from public.profiles where active and role<>'admin' order by id offset 1 limit 1),true),
+       set_config('tfx.contab_id',(select id::text from public.profiles where active and role<>'admin' order by id offset 2 limit 1),true),
+       set_config('tfx.outsider_id',(select id::text from public.profiles where active and role<>'admin' order by id offset 3 limit 1),true),
+       set_config('tfx.template_id',gen_random_uuid()::text,true),
+       set_config('tfx.client_id',gen_random_uuid()::text,true);
 do $$ begin
-  if exists (select 1 from task_fx where admin_id is null or atend_id is null or fiscal_id is null or contab_id is null or outsider_id is null) then
+  if coalesce(current_setting('tfx.admin_id',true),'')='' or coalesce(current_setting('tfx.outsider_id',true),'')='' then
     raise exception 'Preciso de um administrador e quatro outros perfis ativos';
   end if;
 end $$;
-update public.profiles set sector='Atendimento' where id=(select atend_id from task_fx);
-update public.profiles set sector='Fiscal' where id=(select fiscal_id from task_fx);
-update public.profiles set sector='Contábil' where id=(select contab_id from task_fx);
-update public.profiles set sector='Setor Externo Teste' where id=(select outsider_id from task_fx);
+update public.profiles set sector='Atendimento' where id=current_setting('tfx.atend_id')::uuid;
+update public.profiles set sector='Fiscal' where id=current_setting('tfx.fiscal_id')::uuid;
+update public.profiles set sector='Contábil' where id=current_setting('tfx.contab_id')::uuid;
+update public.profiles set sector='Setor Externo Teste' where id=current_setting('tfx.outsider_id')::uuid;
 
 -- Fixtures criadas como dono (a coluna id não é gravável pelo papel authenticated).
 insert into public.task_templates(id,name,steps)
-select template_id,'Teste '||template_id,
-  '[{"sector":"Atendimento"},{"sector":"Fiscal"},{"sector":"Contábil","label":"Fechamento"}]'::jsonb from task_fx;
+values (current_setting('tfx.template_id')::uuid,'Teste '||current_setting('tfx.template_id'),
+  '[{"sector":"Atendimento"},{"sector":"Fiscal"},{"sector":"Contábil","label":"Fechamento"}]'::jsonb);
 insert into public.task_clients(id,name,created_by)
-select client_id,'Cliente teste '||client_id,atend_id from task_fx;
+values (current_setting('tfx.client_id')::uuid,'Cliente teste '||current_setting('tfx.client_id'),current_setting('tfx.atend_id')::uuid);
 
 set local role authenticated;
 
 -- Colaborador comum não cadastra modelo de fluxo.
-select set_config('request.jwt.claim.sub',(select atend_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
 do $$
 begin
   begin
@@ -47,7 +47,7 @@ insert into public.task_clients(name) values ('Cliente criado pelo colaborador')
 do $$
 declare t uuid; v integer;
 begin
-  t := public.task_create((select client_id from task_fx),(select template_id from task_fx),'Tarefa de teste','','alta',null);
+  t := public.task_create(current_setting('tfx.client_id')::uuid,current_setting('tfx.template_id')::uuid,'Tarefa de teste','','alta',null);
   perform set_config('task_fx.id', t::text, true);
   begin update public.tasks set status='done' where id=t; raise exception 'FAIL: update direto em tasks';
   exception when insufficient_privilege then null; end;
@@ -66,7 +66,7 @@ begin
 end $$;
 
 -- Quem não participa do fluxo não vê nem movimenta a tarefa.
-select set_config('request.jwt.claim.sub',(select outsider_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.outsider_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id')::uuid; v integer;
 begin
@@ -79,7 +79,7 @@ begin
 end $$;
 
 -- Fiscal vê o histórico, devolve com motivo e repassa de novo; Contábil conclui.
-select set_config('request.jwt.claim.sub',(select fiscal_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.fiscal_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id')::uuid; v integer;
 begin
@@ -91,19 +91,19 @@ begin
   perform public.task_return(t,v,'Faltou o contrato social');
   if (select current_step from public.tasks where id=t)<>0 then raise exception 'FAIL: devolução não voltou a etapa'; end if;
 end $$;
-select set_config('request.jwt.claim.sub',(select atend_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id')::uuid; v integer;
 begin
   select version into v from public.tasks where id=t; perform public.task_advance(t,v,'Contrato anexado');
 end $$;
-select set_config('request.jwt.claim.sub',(select fiscal_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.fiscal_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id')::uuid; v integer;
 begin
   select version into v from public.tasks where id=t; perform public.task_advance(t,v,'');
 end $$;
-select set_config('request.jwt.claim.sub',(select contab_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.contab_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id')::uuid; v integer;
 begin
@@ -117,14 +117,14 @@ begin
 end $$;
 
 -- Cancelamento: só criador ou administrador, e com motivo.
-select set_config('request.jwt.claim.sub',(select atend_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
 do $$
 declare t uuid; v integer;
 begin
-  t := public.task_create((select client_id from task_fx),(select template_id from task_fx),'Outra tarefa','','normal',current_date);
+  t := public.task_create(current_setting('tfx.client_id')::uuid,current_setting('tfx.template_id')::uuid,'Outra tarefa','','normal',current_date);
   perform set_config('task_fx.id2', t::text, true);
 end $$;
-select set_config('request.jwt.claim.sub',(select fiscal_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.fiscal_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id2')::uuid; v integer;
 begin
@@ -132,7 +132,7 @@ begin
   begin perform public.task_cancel(t,v,'quero cancelar'); raise exception 'FAIL: não criador cancelou';
   exception when others then if sqlerrm like 'FAIL:%' or sqlerrm <> 'task_forbidden' then raise; end if; end;
 end $$;
-select set_config('request.jwt.claim.sub',(select atend_id::text from task_fx),true);
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
 do $$
 declare t uuid := current_setting('task_fx.id2')::uuid; v integer;
 begin
