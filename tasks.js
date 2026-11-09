@@ -5,7 +5,9 @@
   const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const fmtDate = iso => iso ? iso.split('-').reverse().join('/') : '';
   const fmtTime = iso => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-  const SECTORS = ['Atendimento', 'Fiscal', 'Contábil', 'Departamento Pessoal', 'Administração'];
+  const SECTORS = ['Dpto. Fiscal', 'Dpto. Contábil', 'Dpto. Pessoal', 'Administração'];
+  // Setores do filtro: os usados nos modelos e tarefas (um por chave), senão a lista padrão.
+  const usedSectors = () => { const seen = new Map(); for (const x of [...templates, ...tasks]) for (const st of x.steps || []) { const k = flow.sectorKey(st.sector); if (k && !seen.has(k)) seen.set(k, st.sector); } return seen.size ? [...seen.values()].sort((a, b) => a.localeCompare(b, 'pt-BR')) : SECTORS; };
   const PRIORITY = { alta: 'Alta', normal: 'Normal', baixa: 'Baixa' };
   const STATUS = { open: 'Aberta', done: 'Concluída', cancelled: 'Cancelada' };
   const VIEW_LABEL = { inbox: 'Minha caixa', sector: 'Do meu setor', sent: 'Enviadas por mim', all: 'Todas' };
@@ -177,7 +179,7 @@
         <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector).join(' → '))}</small></div><button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button></li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
         <form novalidate><h3>${item ? 'Editar modelo' : 'Novo modelo'}</h3>
         <div class="field"><label for="tmName">Nome da atividade</label><input id="tmName" maxlength="120" value="${esc(item?.name || '')}"></div>
-        <div class="field"><label for="tmSteps">Etapas, uma por linha: setor | descrição opcional</label><textarea id="tmSteps" rows="5" placeholder="Atendimento | Coletar documentos\nFiscal\nContábil">${esc(item ? flow.stepsToText(item.steps) : '')}</textarea><small>Setores usuais: ${SECTORS.join(', ')}. O nome precisa ser igual ao setor cadastrado no perfil dos colaboradores. Tarefas já criadas mantêm a sequência original.</small></div>
+        <div class="field"><label for="tmSteps">Etapas, uma por linha: setor | descrição opcional</label><textarea id="tmSteps" rows="5" placeholder="Dpto. Fiscal | Apurar impostos\nDpto. Contábil | Fechamento">${esc(item ? flow.stepsToText(item.steps) : '')}</textarea><small>Setores usuais: ${SECTORS.join(', ')}. O nome precisa ser igual ao setor cadastrado no perfil dos colaboradores. Tarefas já criadas mantêm a sequência original.</small></div>
         ${item ? `<label class="tasks-check"><input id="tmActive" type="checkbox" ${item.active ? 'checked' : ''}> Modelo ativo</label>` : ''}
         <p class="tasks-error" role="alert"></p>
         <div class="modal-actions">${item ? '<button class="secondary" type="button" data-new>Novo modelo</button>' : ''}<button class="primary" type="submit">${item ? 'Salvar alterações' : 'Criar modelo'}</button></div></form>`;
@@ -209,7 +211,7 @@
       <div class="tasks-tabs" role="tablist">${views.map(v => `<button type="button" role="tab" data-tview="${v}" aria-selected="${filters.view === v}">${VIEW_LABEL[v]} <span class="count" data-tcount="${v}"></span></button>`).join('')}</div>
       <div class="tasks-filters"><div class="field"><label for="tfTerm">Pesquisar</label><input id="tfTerm" type="search" placeholder="Cliente, título ou fluxo" value="${esc(filters.term)}"></div>
       <div class="field"><label for="tfStatus">Situação</label><select id="tfStatus"><option value="">Todas</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
-      <div class="field"><label for="tfSector">Etapa atual</label><select id="tfSector"><option value="">Todos os setores</option>${SECTORS.map(s => `<option>${s}</option>`).join('')}</select></div>
+      <div class="field"><label for="tfSector">Etapa atual</label><select id="tfSector"><option value="">Todos os setores</option>${usedSectors().map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
       <div class="field"><label for="tfPriority">Prioridade</label><select id="tfPriority"><option value="">Todas</option>${Object.entries(PRIORITY).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <label class="tasks-check"><input id="tfLate" type="checkbox"> Só atrasadas</label></div>
       <div class="tasks-list" id="taskList" aria-live="polite"></div>`;
@@ -224,6 +226,8 @@
   function paintList() {
     const host = document.getElementById('taskList'); if (!host || !visible()) return;
     const c = ctx(), map = clientsById(), t = today();
+    const sectorSelect = document.getElementById('tfSector'), sectorOptions = '<option value="">Todos os setores</option>' + usedSectors().map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+    if (sectorSelect && sectorSelect.innerHTML !== sectorOptions) { sectorSelect.innerHTML = sectorOptions; sectorSelect.value = [...sectorSelect.options].some(o => flow.sectorKey(o.value) === flow.sectorKey(filters.sector)) ? [...sectorSelect.options].find(o => flow.sectorKey(o.value) === flow.sectorKey(filters.sector)).value : ''; }
     document.querySelectorAll('[data-tcount]').forEach(el => { const v = el.dataset.tcount; el.textContent = String(tasks.filter(x => flow.isOpen(x) && flow.filterTasks([x], { view: v }, c, map, t).length).length); });
     const rows = flow.filterTasks(tasks, filters, c, map, t);
     if (!ready) { host.innerHTML = '<div class="empty">Carregando tarefas…</div>'; return; }
