@@ -182,7 +182,7 @@ function startDataSync(user) {
   };
   void loadData(user).catch(error=>console.warn("Initial data refresh failed",error));
   const channel=supabase.channel("conecta-live");
-  const scopes={notices:["notices"],global_announcements:["announcements"],reminders:["reminders"],conversations:["conversations","unread"],profiles:allGroups,profile_photos:["photos"],team_status:["statuses"],message_favorites:["favorites"],kitchen_calendar:["calendar"],message_hidden_for:["hidden","favorites"]};
+  const scopes={notices:["notices"],global_announcements:["announcements"],reminders:["reminders"],conversations:["conversations","unread"],profiles:["profile","users","directory"],profile_photos:["photos"],team_status:["statuses"],message_favorites:["favorites"],kitchen_calendar:["calendar"],message_hidden_for:["hidden","favorites"]};
   for (const [table,groups]of Object.entries(scopes)) {
     const filter={event:"*",schema:"public",table};
     if (["reminders","message_favorites","message_hidden_for"].includes(table)) filter.filter=(table==="reminders"?"owner_id":"user_id")+"=eq."+user.id;

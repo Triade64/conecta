@@ -142,6 +142,8 @@
 
   // ---------- reações e fixadas ----------
   let extrasConv = '', extrasChannel = null, reactions = new Map(), pins = [], loadSeq = 0;
+  // Guarda reações/fixadas por conversa por 5 min para não buscar de novo a cada troca.
+  const extrasCache = new Map();
   async function loadExtras() {
     const convId = extrasConv, seq = ++loadSeq, api = db(); if (!api || !convId) return;
     const [r, p] = await Promise.all([
@@ -152,6 +154,7 @@
     reactions = new Map();
     for (const row of r.error ? [] : r.data) { if (!reactions.has(row.message_id)) reactions.set(row.message_id, []); reactions.get(row.message_id).push(row); }
     pins = p.error ? [] : p.data.filter(x => !x.messages?.deleted_at);
+    if (!r.error && !p.error) extrasCache.set(convId, { at: Date.now(), reactions, pins });
     decorate(true);
   }
   function ensureExtras(convId) {
@@ -162,7 +165,10 @@
     let timer = null; const later = () => { clearTimeout(timer); timer = setTimeout(() => void loadExtras(), 200); };
     extrasChannel = db().channel('chat-extras-' + convId);
     for (const table of ['message_reactions', 'message_pins']) extrasChannel.on('postgres_changes', { event: '*', schema: 'public', table, filter: 'conversation_id=eq.' + convId }, later);
-    extrasChannel.subscribe(); void loadExtras();
+    extrasChannel.subscribe();
+    const cached = extrasCache.get(convId);
+    if (cached && Date.now() - cached.at < 5 * 60_000) { reactions = cached.reactions; pins = cached.pins; requestAnimationFrame(() => decorate(true)); }
+    else void loadExtras();
   }
   async function toggleReaction(messageId, emoji) {
     const api = db(), mine = (reactions.get(messageId) || []).some(r => r.user_id === me() && r.emoji === emoji);

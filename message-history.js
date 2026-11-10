@@ -1,5 +1,8 @@
 (function(root){
   const fields='id,conversation_id,text,author_id,author_name,created_at,reply_to,edited_at,deleted_at,attachment_path,attachment_url,attachment_name,attachment_mime,attachment_size';
+  // Lista de mensagens ocultas compartilhada entre conversas: evita buscá-la
+  // de novo a cada troca de conversa (o Realtime avisa quando ela muda).
+  const hiddenCache={user:null,at:0,ids:null};
   const compare=(a,b)=>a.created_at.localeCompare(b.created_at)||a.id.localeCompare(b.id);
   function createHistory({db,conversationId,userId,isCurrent,emit,pageSize=50}){
     const rows=new Map(),parents=new Map();let hidden=new Set(),cursor=null,hasMore=false,loading=false,context=false;
@@ -16,7 +19,11 @@
       if(isCurrent())await emit(snapshot(),state());
     };
     const enqueue=task=>{const next=serial.then(async()=>{if(isCurrent())return task();});serial=next.catch(()=>{});return next;};
-    const hide=async()=>{const data=check(await db.from('message_hidden_for').select('message_id').eq('user_id',userId));if(isCurrent())hidden=new Set(data.map(r=>r.message_id));};
+    const hide=async(force=false)=>{
+      if(!force&&hiddenCache.user===userId&&hiddenCache.ids&&Date.now()-hiddenCache.at<10*60_000){hidden=new Set(hiddenCache.ids);return;}
+      const data=check(await db.from('message_hidden_for').select('message_id').eq('user_id',userId));
+      Object.assign(hiddenCache,{user:userId,at:Date.now(),ids:data.map(r=>r.message_id)});
+      if(isCurrent())hidden=new Set(hiddenCache.ids);};
     const recent=async(reset=false)=>{
       const data=check(await ordered(query()).limit(pageSize+1));if(!isCurrent())return;
       const page=data.slice(0,pageSize);
@@ -42,7 +49,7 @@
           for(const row of page)rows.set(row.id,row);loading=false;await publish();
         }finally{loading=false;}
       }),
-      hiddenChanged:()=>enqueue(async()=>{await hide();await publish();}),
+      hiddenChanged:()=>enqueue(async()=>{await hide(true);await publish();}),
       changes:payloads=>enqueue(async()=>{
         const ids=new Set();
         for(const p of payloads){const id=p.new?.id||p.old?.id;if(!id)continue;
@@ -62,7 +69,7 @@
         for(let i=0;i<ids.length;i+=pageSize){const batch=ids.slice(i,i+pageSize),data=check(await query().in('id',batch));if(!isCurrent())return;
           const returned=new Map(data.map(r=>[r.id,r]));for(const id of batch){if(rows.has(id)){if(returned.has(id))rows.set(id,returned.get(id));else rows.delete(id);}if(parents.has(id)){if(returned.has(id))parents.set(id,returned.get(id));else parents.delete(id);}}
         }
-        if(!context)await recent();await hide();await publish();
+        if(!context)await recent();await hide(true);await publish();
       }),
       reveal:id=>enqueue(async()=>{
         if(rows.has(id)){await publish();return true;}

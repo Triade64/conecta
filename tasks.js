@@ -13,7 +13,7 @@
   const VIEW_LABEL = { inbox: 'Minha caixa', sector: 'Do meu setor', sent: 'Enviadas por mim', all: 'Todas' };
   const EVENT_LABEL = { created: 'Tarefa criada', advanced: 'Repassada', returned: 'Devolvida', completed: 'Concluída', cancelled: 'Cancelada', comment: 'Comentário', claimed: 'Assumida', released: 'Responsável liberado', completion_changed: 'Data de conclusão alterada' };
 
-  let tasks = [], clients = [], templates = [], recurrences = [], holidays = [], ready = false, channel = null, timer = null, dueTimer = null, lastLoad = 0, generation = 0;
+  let tasks = [], clients = [], templates = [], recurrences = [], holidays = [], ready = false, channel = null, timer = null, dueTimer = null, lastLoad = 0, generation = 0, staticAt = 0, staticDirty = true;
   let detail = null, detailEvents = [];
   const filters = { view: 'inbox', status: 'open', term: '', priority: '', sector: '', competence: '', onlyLate: false };
   const client = () => window.conectaTasksApi?.client();
@@ -35,17 +35,21 @@
   async function load() {
     const api = client(); if (!api || !window.conectaCurrentUser) return;
     const mine = ++generation;
+    // Clientes, modelos, recorrências e feriados quase não mudam: só voltam ao
+    // banco quando o Realtime avisa alteração neles ou a cada 6 horas.
+    const full = staticDirty || Date.now() - staticAt > 6 * 3600_000;
+    const keep = data => Promise.resolve({ data, error: null });
     const [t, c, m, r, h] = await Promise.all([
       api.from('tasks').select('*').order('updated_at', { ascending: false }).limit(500),
-      api.from('task_clients').select('id,name,document,active').order('name'),
-      api.from('task_templates').select('id,name,steps,active,created_by').order('name'),
-      api.from('task_recurrences').select('*').order('day_of_month'),
-      api.from('holidays').select('day,name').order('day')
+      !full ? keep(clients) : api.from('task_clients').select('id,name,document,active').order('name'),
+      !full ? keep(templates) : api.from('task_templates').select('id,name,steps,active,created_by').order('name'),
+      !full ? keep(recurrences) : api.from('task_recurrences').select('*').order('day_of_month'),
+      !full ? keep(holidays) : api.from('holidays').select('day,name').order('day')
     ]);
     if (mine !== generation) return;
     if (t.error || c.error || m.error) { console.warn('Tarefas: falha ao carregar', t.error || c.error || m.error); return; }
     const previous = ready ? tasks : null;
-    tasks = t.data; clients = c.data; templates = m.data; recurrences = r.error ? [] : r.data; holidays = h.error ? [] : h.data; ready = true; lastLoad = Date.now();
+    tasks = t.data; clients = c.data; templates = m.data; recurrences = r.error ? [] : r.data; holidays = h.error ? [] : h.data; ready = true; lastLoad = Date.now(); if (full) { staticAt = lastLoad; staticDirty = false; }
     notifyArrivals(flow.arrivals(previous, tasks, ctx()));
     notifyDueSoon();
     if (detail) { detail = tasks.find(x => x.id === detail.id) || null; if (!detail) closeDetail(); }
@@ -56,11 +60,12 @@
   function start() {
     stop(); const api = client(); if (!api) return;
     channel = api.channel('tasks-live');
-    for (const table of ['tasks', 'task_clients', 'task_templates', 'task_recurrences', 'holidays']) channel.on('postgres_changes', { event: '*', schema: 'public', table }, schedule);
+    channel.on('postgres_changes', { event: '*', schema: 'public', table: 'tasks' }, schedule);
+    for (const table of ['task_clients', 'task_templates', 'task_recurrences', 'holidays']) channel.on('postgres_changes', { event: '*', schema: 'public', table }, () => { staticDirty = true; schedule(); });
     channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_events' }, payload => {
       if (detail && payload.new?.task_id === detail.id) void loadEvents();
     });
-    channel.subscribe(status => { if (status === 'SUBSCRIBED') schedule(); });
+    channel.subscribe(status => { if (status === 'SUBSCRIBED') { staticDirty = true; schedule(); } });
     void load().catch(e => console.warn(e));
     dueTimer = setInterval(() => { if (ready) notifyDueSoon(); }, 60 * 60 * 1000);
   }
@@ -68,7 +73,7 @@
     clearTimeout(timer); clearInterval(dueTimer); generation++;
     if (channel) { client()?.removeChannel(channel); channel = null; }
   }
-  function reset() { stop(); tasks = []; clients = []; templates = []; recurrences = []; holidays = []; ready = false; detail = null; detailEvents = []; closeDialogs(); paintNav(); if (visible()) paintList(); }
+  function reset() { stop(); staticDirty = true; tasks = []; clients = []; templates = []; recurrences = []; holidays = []; ready = false; detail = null; detailEvents = []; closeDialogs(); paintNav(); if (visible()) paintList(); }
 
   // ---------- avisos de chegada ----------
   function notifyArrivals(list) {
@@ -188,7 +193,7 @@
         if (!clientId) throw { userMessage: 'Selecione ou cadastre o cliente.' };
         if ($('ntTitle').value.trim().length < 3) throw { userMessage: 'Informe um título com pelo menos 3 caracteres.' };
         check(await api.rpc('task_create', { p_client: clientId, p_template: $('ntTemplate').value, p_title: $('ntTitle').value, p_description: $('ntDesc').value, p_priority: $('ntPriority').value, p_due: null, p_competence: $('ntComp').value || null }));
-        d.close(); toast('Tarefa criada.'); await load();
+        d.close(); toast('Tarefa criada.'); staticDirty = true; await load();
       });
     };
   }
@@ -219,7 +224,7 @@
       box.querySelectorAll('[data-chat]').forEach(b => { b.onclick = () => { closeDetail(); window.conectaChatExtras?.jump(b.dataset.chat, b.dataset.msg); }; });
     };
     if (cached) draw(cached.rows);
-    if (cached && Date.now() - cached.at < 30_000) return;
+    if (cached && Date.now() - cached.at < 5 * 60_000) return;
     const { data, error } = await client().from('messages').select('id,conversation_id,author_name,text,created_at').is('deleted_at', null).ilike('text', '%#tarefa/' + task.id + '%').order('created_at', { ascending: false }).limit(10);
     if (error) return;
     chatMentions.set(task.id, { at: Date.now(), rows: data });
@@ -300,7 +305,7 @@
         if (act === 'cancel') check(await api.rpc('task_cancel', { p_task: task.id, p_version: v, p_note: note }));
         host.querySelector('#tdNote').value = '';
         toast(act === 'comment' ? 'Comentário registrado.' : 'Tarefa atualizada.');
-        await load(); await loadEvents();
+        staticDirty = true; await load(); await loadEvents();
       }).catch(() => {}).then(() => { if (error.textContent.includes('alterada por outra pessoa')) void load(); });
     });
   }
@@ -349,7 +354,7 @@
           const api = client();
           if (item) check(await api.from('task_templates').update({ name, steps, active: host.querySelector('#tmActive').checked, updated_at: new Date().toISOString() }).eq('id', item.id));
           else check(await api.from('task_templates').insert({ name, steps }));
-          await load(); toast(source ? 'Modelo duplicado.' : 'Modelo salvo.'); paint(null);
+          staticDirty = true; await load(); toast(source ? 'Modelo duplicado.' : 'Modelo salvo.'); paint(null);
         });
       };
     };
@@ -385,7 +390,7 @@
       host.querySelector('[data-delete]')?.addEventListener('click', event => void guarded(event.currentTarget, error, async () => {
         if (!confirm('Excluir esta recorrência? As tarefas já criadas continuam.')) return;
         check(await client().from('task_recurrences').delete().eq('id', item.id));
-        await load(); toast('Recorrência excluída.'); paint(null);
+        staticDirty = true; await load(); toast('Recorrência excluída.'); paint(null);
       }));
       host.querySelector('form').onsubmit = async event => {
         event.preventDefault();
@@ -399,7 +404,7 @@
           const api = client();
           if (item) check(await api.from('task_recurrences').update({ ...row, active: $('rcActive').checked }).eq('id', item.id));
           else check(await api.from('task_recurrences').insert(row));
-          await load(); toast('Recorrência salva.'); paint(null);
+          staticDirty = true; await load(); toast('Recorrência salva.'); paint(null);
         });
       };
     };
@@ -417,7 +422,7 @@
         <p class="tasks-error" role="alert"></p><div class="modal-actions"><button class="primary" type="submit">Adicionar</button></div></form>`;
       host.querySelector('[data-close]').onclick = () => d.close();
       const error = host.querySelector('.tasks-error');
-      host.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => void guarded(b, error, async () => { check(await client().from('holidays').delete().eq('day', b.dataset.del)); await load(); paint(); }); });
+      host.querySelectorAll('[data-del]').forEach(b => { b.onclick = () => void guarded(b, error, async () => { check(await client().from('holidays').delete().eq('day', b.dataset.del)); staticDirty = true; await load(); paint(); }); });
       host.querySelector('form').onsubmit = async event => {
         event.preventDefault();
         await guarded(host.querySelector('[type=submit]'), error, async () => {
@@ -425,7 +430,7 @@
           if (!day) throw { userMessage: 'Informe a data.' };
           if (name.length < 2) throw { userMessage: 'Informe o nome do feriado.' };
           check(await client().from('holidays').insert({ day, name }));
-          await load(); toast('Feriado adicionado.'); paint();
+          staticDirty = true; await load(); toast('Feriado adicionado.'); paint();
         });
       };
     };
@@ -483,7 +488,7 @@
   nav.onclick = () => { document.querySelectorAll('.nav button,.channel').forEach(b => b.classList.toggle('active', b === nav)); renderView('Tarefas'); if (ready && Date.now() - lastLoad > 10 * 60_000) schedule(); };
   window.addEventListener('conecta-profile-ready', () => { if (window.conectaCurrentProfile?.active !== false) start(); });
   window.addEventListener('conecta-auth-session-reset', reset);
-  window.addEventListener('focus', () => { if (ready && Date.now() - lastLoad > 60_000) schedule(); });
+  window.addEventListener('focus', () => { if (ready && Date.now() - lastLoad > 10 * 60_000) schedule(); });
   if (window.conectaCurrentUser && window.conectaCurrentProfile) start();
   handleHash();
 })();
