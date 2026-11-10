@@ -147,3 +147,23 @@ test('summary conta caixa, atrasadas, hoje e comigo', () => {
 test('mensagens de validação da tela aparecem como escritas', () => {
   assert.equal(flow.errorMessage({ userMessage: 'O dia precisa estar entre 1 e 28.' }), 'O dia precisa estar entre 1 e 28.');
 });
+
+test('stepDates: dia fixo por etapa, nunca antes da anterior, adiando fim de semana e feriado', () => {
+  const holidays = new Set(['2026-11-20']);
+  const steps = [{ sector: 'Dpto. Fiscal', due_day: 10 }, { sector: 'Dpto. Contábil', due_day: 5 }, { sector: 'Administrador' }, { sector: 'Dpto. Pessoal', due_day: 20 }];
+  const out = flow.stepDates(steps, '2026-11-09', holidays);
+  assert.equal(out[0].due_date, '2026-11-10');          // terça
+  assert.equal(out[1].due_date, '2026-12-07');          // dia 5/12 é sábado → segunda 07/12
+  assert.equal(out[2].due_date, undefined);             // etapa sem prazo
+  assert.equal(out[3].due_date, '2026-12-21');          // 20/12 é domingo → 21/12
+  assert.equal(flow.stepDates([{ sector: 'X', due_day: 20 }], '2026-11-09', holidays)[0].due_date, '2026-11-23'); // feriado sexta 20/11 → seg 23/11
+  assert.equal(flow.stepDates([{ sector: 'X', due_day: 31 }], '2027-02-01')[0].due_date, '2027-03-01'); // 28/02/2027 é domingo → 01/03
+  assert.equal(flow.stepDates([{ sector: 'X', due_day: 9 }], '2026-11-09')[0].due_date, '2026-11-09'); // o próprio dia vale
+});
+
+test('dueState usa o prazo da etapa atual', () => {
+  const steps = [{ sector: 'Atendimento', due_date: '2026-11-05' }, { sector: 'Dpto. Fiscal', due_date: '2026-11-20' }];
+  assert.equal(flow.dueState(mk({ steps, current_step: 0 }), '2026-11-09'), 'late');
+  assert.equal(flow.dueState(mk({ steps, current_step: 1 }), '2026-11-09'), 'ok');
+  assert.equal(flow.dueState(mk({ steps: [{ sector: 'A' }, { sector: 'B', due_date: '2026-11-01' }], due_date: '2026-11-01' }), '2026-11-09'), 'none');
+});

@@ -27,10 +27,30 @@
       release: open && !!task.assigned_to && (task.assigned_to === ctx.userId || !!ctx.admin)
     };
   };
+  // Prazo que vale agora: o da etapa atual; tarefas antigas sem prazo por etapa usam o da tarefa.
+  const currentDue = task => currentStep(task)?.due_date || ((task.steps || []).some(s => s.due_date) ? '' : task.due_date || '');
   const dueState = (task, today) => {
-    if (!task.due_date || !isOpen(task)) return 'none';
-    if (task.due_date < today) return 'late';
-    return task.due_date === today ? 'today' : 'ok';
+    const due = currentDue(task);
+    if (!due || !isOpen(task)) return 'none';
+    if (due < today) return 'late';
+    return due === today ? 'today' : 'ok';
+  };
+  // Mesmo cálculo de private.task_step_dates (banco). Datas em 'AAAA-MM-DD'.
+  const iso = d => d.toISOString().slice(0, 10);
+  const parse = s => new Date(s + 'T00:00:00Z');
+  const dayInMonth = (base, day) => { const y = base.getUTCFullYear(), m = base.getUTCMonth(), last = new Date(Date.UTC(y, m + 1, 0)).getUTCDate(); return new Date(Date.UTC(y, m, Math.min(day, last))); };
+  const businessDay = (date, holidays) => { const d = new Date(date); while ([0, 6].includes(d.getUTCDay()) || holidays.has(iso(d))) d.setUTCDate(d.getUTCDate() + 1); return d; };
+  const stepDates = (steps, start, holidays = new Set()) => {
+    let prev = parse(start);
+    return (steps || []).map(step => {
+      const { due_date, ...rest } = step;
+      const day = Number(step.due_day);
+      if (!Number.isInteger(day) || day < 1 || day > 31) return rest;
+      let raw = dayInMonth(prev, day);
+      if (raw < prev) raw = dayInMonth(new Date(Date.UTC(prev.getUTCFullYear(), prev.getUTCMonth() + 1, 1)), day);
+      const due = businessDay(raw, holidays); prev = due;
+      return { ...rest, due_date: iso(due) };
+    });
   };
   const VIEWS = ['inbox', 'sector', 'sent', 'all'];
   const inView = (task, view, ctx) => {
@@ -57,7 +77,7 @@
     });
     const weight = { alta: 0, normal: 1, baixa: 2 };
     return rows.sort((a, b) =>
-      (a.due_date || '9999-12-31').localeCompare(b.due_date || '9999-12-31') ||
+      (currentDue(a) || '9999-12-31').localeCompare(currentDue(b) || '9999-12-31') ||
       (weight[a.priority] - weight[b.priority]) ||
       String(b.updated_at).localeCompare(String(a.updated_at)));
   };
@@ -105,6 +125,6 @@
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);
