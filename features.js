@@ -395,9 +395,11 @@
     if (!detail.id) return;
     const body = detail.isNudge
       ? `${detail.authorName || "Um colaborador"} chamou sua atenção!`
-      : `${detail.authorName || "Um colaborador"} enviou uma mensagem em ${detail.conversationName || "uma conversa"}.`;
-    const shown = showBrowserNotification(detail.isNudge ? "Chamou sua atenção!" : "Nova mensagem", body, `message-${detail.id}`, false,
-      detail.isNudge ? () => window.conectaRevealNudge?.(detail) : null);
+      : detail.mentionsMe
+        ? `${detail.authorName || "Um colaborador"} mencionou você em ${detail.conversationName || "uma conversa"}.`
+        : `${detail.authorName || "Um colaborador"} enviou uma mensagem em ${detail.conversationName || "uma conversa"}.`;
+    const shown = showBrowserNotification(detail.isNudge ? "Chamou sua atenção!" : detail.mentionsMe ? "Você foi mencionado" : "Nova mensagem", body, `message-${detail.id}`, false,
+      detail.isNudge ? () => window.conectaRevealNudge?.(detail) : detail.mentionsMe ? () => window.conectaChatExtras?.jump(detail.conversationId, detail.id) : null);
     if (!shown && document.visibilityState === "visible") showToast(body);
   });
   window.addEventListener("conecta-profile-photo-sync", event => {

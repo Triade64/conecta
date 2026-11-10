@@ -165,6 +165,7 @@ async function dispatchIncomingMessageNotification(payload, user) {
     authorId: visibleMessage.author_id,
     authorName: author?.name || "Um colaborador",
     isNudge: visibleMessage.text === "🔔 Chamou sua atenção!",
+    mentionsMe: window.conectaMentions?.mentions(visibleMessage.text, user.id) || false,
     conversationKind: conversation?.kind || null,
     conversationName: conversation?.kind === "channel" ? (conversation.name || "um canal") : "sua conversa individual"
   });

@@ -152,7 +152,8 @@
   }
   const check = result => { if (result.error) throw result.error; return result.data; };
 
-  function newTaskDialog() {
+  function newTaskDialog(prefill) {
+    prefill = prefill && typeof prefill.title === 'string' ? prefill : null;
     const active = templates.filter(t => t.active);
     if (!active.length) { toast('Cadastre um modelo de fluxo antes de criar tarefas.'); templatesDialog(); return; }
     const clientOptions = clients.filter(c => c.active).map(c => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
@@ -168,6 +169,7 @@
       <p class="tasks-error" role="alert"></p>
       <div class="modal-actions"><button class="secondary" type="button" data-close>Cancelar</button><button class="primary" type="submit">Criar tarefa</button></div></form>`);
     const $ = id => d.querySelector('#' + id);
+    if (prefill) { $('ntTitle').value = prefill.title.slice(0, 160); $('ntDesc').value = (prefill.description || '').slice(0, 4000); }
     const showSteps = () => { const t = templates.find(x => x.id === $('ntTemplate').value); $('ntSteps').textContent = t ? flow.stepDates(t.steps, flow.deadlineStart($('ntComp').value, today()), holidaySet()).map(s => s.sector + (s.due_date ? ' (até ' + fmtDate(s.due_date) + ')' : '')).join(' → ') : ''; };
     $('ntTemplate').onchange = showSteps; $('ntComp').oninput = $('ntComp').onchange = showSteps; showSteps();
     $('ntNewClient').onclick = () => { $('ntClientBox').classList.toggle('tasks-hidden'); $('ntClientName').focus(); };
@@ -205,6 +207,46 @@
     d.addEventListener('close', () => { if (!d.dataset.stale && detail?.id === id) detail = null; });
     d.dataset.detail = '1'; paintDetail(); void loadEvents();
   }
+  // ---------- ligação com as conversas ----------
+  const taskLink = id => location.origin + location.pathname + '#tarefa/' + id;
+  const chatMentions = new Map(); // task id -> { at, rows }
+  async function paintChatMentions(host, task) {
+    let box = host.querySelector('.tasks-chat-mentions');
+    if (!box) { box = document.createElement('div'); box.className = 'tasks-chat-mentions'; host.querySelector('.tasks-track')?.after(box); }
+    const cached = chatMentions.get(task.id);
+    const draw = rows => {
+      box.innerHTML = rows.length ? `<h3>No chat</h3><ul>${rows.map(r => `<li><button type="button" class="text-btn" data-chat="${esc(r.conversation_id)}" data-msg="${esc(r.id)}">${esc(r.author_name || 'Colaborador')} · ${fmtTime(r.created_at)}</button><small>${esc(String(r.text || '').replace(/\S*#tarefa\/[0-9a-f-]+/gi, '[tarefa]').slice(0, 140))}</small></li>`).join('')}</ul>` : '';
+      box.querySelectorAll('[data-chat]').forEach(b => { b.onclick = () => { closeDetail(); window.conectaChatExtras?.jump(b.dataset.chat, b.dataset.msg); }; });
+    };
+    if (cached) draw(cached.rows);
+    if (cached && Date.now() - cached.at < 30_000) return;
+    const { data, error } = await client().from('messages').select('id,conversation_id,author_name,text,created_at').is('deleted_at', null).ilike('text', '%#tarefa/' + task.id + '%').order('created_at', { ascending: false }).limit(10);
+    if (error) return;
+    chatMentions.set(task.id, { at: Date.now(), rows: data });
+    if (detail?.id === task.id) draw(data);
+  }
+  async function openFromLink(id) {
+    for (let i = 0; i < 240 && !ready; i++) await new Promise(r => setTimeout(r, 250));
+    if (!tasks.some(t => t.id === id)) { toast('Tarefa não encontrada ou sem acesso.'); return; }
+    openTaskFromOutside(id);
+  }
+  const handleHash = () => {
+    const m = /^#tarefa\/([0-9a-f-]{36})$/i.exec(location.hash);
+    if (!m) return;
+    history.replaceState(null, '', location.pathname + location.search);
+    void openFromLink(m[1]);
+  };
+  window.addEventListener('hashchange', handleHash);
+  window.conectaTasks = {
+    link: taskLink,
+    open: id => void openFromLink(id),
+    openNew: prefill => { if (!ready) { toast('As tarefas ainda estão carregando. Tente de novo em instantes.'); return; } newTaskDialog(prefill); },
+    info: id => {
+      const t = tasks.find(x => x.id === id); if (!t) return null;
+      const p = flow.progress(t);
+      return { title: t.title, client: clientsById().get(t.client_id)?.name || 'Cliente', status: STATUS[t.status], open: flow.isOpen(t), sector: p.sector, label: p.label, step: p.index + 1, total: p.total, due: flow.currentDue(t) ? fmtDate(flow.currentDue(t)) : '', late: flow.dueState(t, today()) === 'late', competence: flow.fmtCompetence(t.competence) };
+    }
+  };
   function closeDetail() { document.querySelector('dialog[data-detail][open]')?.close(); }
   async function loadEvents() {
     if (!detail) return; const id = detail.id;
@@ -216,7 +258,7 @@
     const task = detail, c = ctx(), allow = flow.can(task, c), p = flow.progress(task), cl = clientsById().get(task.client_id);
     const late = flow.dueState(task, today());
     const typed = host.querySelector('#tdNote')?.value || '', typedDone = host.querySelector('#tdStepDone')?.value || '';
-    host.innerHTML = `<div class="tasks-head"><div><h2>${esc(task.title)}</h2><p>${esc(cl?.name || 'Cliente')} · ${esc(task.template_name)}</p></div><button class="text-btn" type="button" data-close-detail aria-label="Fechar">✕</button></div>
+    host.innerHTML = `<div class="tasks-head"><div><h2>${esc(task.title)}</h2><p>${esc(cl?.name || 'Cliente')} · ${esc(task.template_name)}</p></div><div class="tasks-head-actions"><button class="text-btn" type="button" data-copy-link title="Copiar link para colar no chat">🔗 Copiar link</button><button class="text-btn" type="button" data-close-detail aria-label="Fechar">✕</button></div></div>
       <div class="tasks-meta"><span class="tasks-pill status-${esc(task.status)}">${STATUS[task.status]}</span><span class="tasks-pill prio-${esc(task.priority)}">Prioridade ${PRIORITY[task.priority]}</span>${task.competence ? `<span class="tasks-pill">Competência ${flow.fmtCompetence(task.competence)}</span>` : ''}${flow.currentDue(task) && task.status === 'open' ? `<span class="tasks-pill due-${late}">Prazo do ${esc(p.sector)}: ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : late === 'today' ? ' · hoje' : ''}</span>` : ''}</div>
       ${task.status === 'open' ? `<div class="tasks-assignee"><span>${task.assigned_to ? `Responsável: <strong>${esc(task.assigned_name || 'Colaborador')}</strong>` : `Sem responsável no ${esc(p.sector)}`}</span>${allow.claim ? `<button class="secondary" type="button" data-act="claim">${task.assigned_to ? 'Assumir no lugar' : 'Assumir'}</button>` : ''}${allow.release ? '<button class="text-btn" type="button" data-act="release">Liberar</button>' : ''}</div>` : ''}
       ${task.status === 'done' ? `<div class="tasks-assignee"><span>Concluída em <strong>${task.completed_at ? fmtDate(flow.officeDate(task.completed_at)) : '—'}</strong></span>${allow.setCompleted ? `<input type="date" id="tdDoneDate" aria-label="Nova data de conclusão" value="${task.completed_at ? flow.officeDate(task.completed_at) : ''}" min="${flow.officeDate(task.created_at)}" max="${today()}"><button class="secondary" type="button" data-act="completed-at">Alterar data</button>` : ''}</div>` : ''}
@@ -231,6 +273,11 @@
     host.querySelector('#tdNote').value = typed;
     if (typedDone && host.querySelector('#tdStepDone')) host.querySelector('#tdStepDone').value = typedDone;
     host.querySelector('[data-close-detail]').onclick = closeDetail;
+    host.querySelector('[data-copy-link]').onclick = async () => {
+      try { await navigator.clipboard.writeText(taskLink(task.id)); toast('Link copiado. Cole numa conversa para mostrar o cartão da tarefa.'); }
+      catch { prompt('Copie o link da tarefa:', taskLink(task.id)); }
+    };
+    paintChatMentions(host, task);
     const error = host.querySelector('.tasks-error');
     host.querySelectorAll('[data-act]').forEach(button => {
       button.onclick = () => void guarded(button, error, async () => {
@@ -438,4 +485,5 @@
   window.addEventListener('conecta-auth-session-reset', reset);
   window.addEventListener('focus', () => { if (ready && Date.now() - lastLoad > 60_000) schedule(); });
   if (window.conectaCurrentUser && window.conectaCurrentProfile) start();
+  handleHash();
 })();
