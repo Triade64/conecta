@@ -150,8 +150,8 @@
       <p class="tasks-error" role="alert"></p>
       <div class="modal-actions"><button class="secondary" type="button" data-close>Cancelar</button><button class="primary" type="submit">Criar tarefa</button></div></form>`);
     const $ = id => d.querySelector('#' + id);
-    const showSteps = () => { const t = templates.find(x => x.id === $('ntTemplate').value); $('ntSteps').textContent = t ? flow.stepDates(t.steps, today(), holidaySet()).map(s => s.sector + (s.due_date ? ' (até ' + fmtDate(s.due_date) + ')' : '')).join(' → ') : ''; };
-    $('ntTemplate').onchange = showSteps; showSteps();
+    const showSteps = () => { const t = templates.find(x => x.id === $('ntTemplate').value); $('ntSteps').textContent = t ? flow.stepDates(t.steps, flow.deadlineStart($('ntComp').value, today()), holidaySet()).map(s => s.sector + (s.due_date ? ' (até ' + fmtDate(s.due_date) + ')' : '')).join(' → ') : ''; };
+    $('ntTemplate').onchange = showSteps; $('ntComp').oninput = $('ntComp').onchange = showSteps; showSteps();
     $('ntNewClient').onclick = () => { $('ntClientBox').classList.toggle('tasks-hidden'); $('ntClientName').focus(); };
     const error = d.querySelector('.tasks-error');
     d.querySelector('form').onsubmit = async event => {

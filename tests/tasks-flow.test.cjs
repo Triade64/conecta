@@ -194,3 +194,13 @@ test('"Do meu setor": aparece ao chegar, continua depois de passar, concluídas 
   assert.equal(run(mk({ current_step: 2, status: 'done' }), contab), true);
   assert.equal(run(mk({ current_step: 0, status: 'cancelled' }), contab), false);
 });
+
+test('prazos contam do mês seguinte à competência', () => {
+  assert.equal(flow.deadlineStart('2026-10', '2026-11-10'), '2026-11-01');
+  assert.equal(flow.deadlineStart('2026-12', '2026-11-10'), '2027-01-01');
+  assert.equal(flow.deadlineStart('', '2026-11-10'), '2026-11-10');
+  const holidays = new Set(['2026-11-15']);
+  const steps = [{ sector: 'Dpto. Fiscal', due_day: 8 }, { sector: 'Dpto. Pessoal', due_day: 9 }, { sector: 'Dpto. Fiscal', due_day: 15 }, { sector: 'Dpto. Contábil', due_day: 30 }];
+  assert.deepEqual(flow.stepDates(steps, flow.deadlineStart('2026-10', '2026-11-10'), holidays).map(s => s.due_date),
+    ['2026-11-09', '2026-11-09', '2026-11-16', '2026-11-30']);
+});

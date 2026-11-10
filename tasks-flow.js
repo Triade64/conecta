@@ -37,6 +37,12 @@
   };
   // Competência 'AAAA-MM': mês anterior a uma data 'AAAA-MM-DD' e formato de exibição MM/AAAA.
   const previousMonth = day => { const [y, m] = day.split('-').map(Number); return m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0'); };
+  // Início da contagem dos prazos: 1º dia do mês seguinte à competência, ou hoje (igual a private.task_deadline_start).
+  const deadlineStart = (comp, today) => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(comp || '')) return today;
+    const [y, m] = comp.split('-').map(Number);
+    return m === 12 ? (y + 1) + '-01-01' : y + '-' + String(m + 1).padStart(2, '0') + '-01';
+  };
   const fmtCompetence = comp => comp ? comp.slice(5, 7) + '/' + comp.slice(0, 4) : '';
   // Mesmo cálculo de private.task_step_dates (banco). Datas em 'AAAA-MM-DD'.
   const iso = d => d.toISOString().slice(0, 10);
@@ -135,6 +141,6 @@
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { deadlineStart, previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);
