@@ -167,3 +167,12 @@ test('dueState usa o prazo da etapa atual', () => {
   assert.equal(flow.dueState(mk({ steps, current_step: 1 }), '2026-11-09'), 'ok');
   assert.equal(flow.dueState(mk({ steps: [{ sector: 'A' }, { sector: 'B', due_date: '2026-11-01' }], due_date: '2026-11-01' }), '2026-11-09'), 'none');
 });
+
+test('competência: mês anterior, exibição e busca', () => {
+  assert.equal(flow.previousMonth('2026-11-10'), '2026-10');
+  assert.equal(flow.previousMonth('2027-01-05'), '2026-12');
+  assert.equal(flow.fmtCompetence('2026-10'), '10/2026');
+  assert.equal(flow.fmtCompetence(null), '');
+  const tasks = [mk({ id: 'a', competence: '2026-10' }), mk({ id: 'b', competence: '2026-09' })];
+  assert.deepEqual(flow.filterTasks(tasks, { view: 'sent', term: '10/2026' }, atend, new Map(), '2026-11-10').map(t => t.id), ['a']);
+});

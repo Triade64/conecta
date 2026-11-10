@@ -35,6 +35,9 @@
     if (due < today) return 'late';
     return due === today ? 'today' : 'ok';
   };
+  // Competência 'AAAA-MM': mês anterior a uma data 'AAAA-MM-DD' e formato de exibição MM/AAAA.
+  const previousMonth = day => { const [y, m] = day.split('-').map(Number); return m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0'); };
+  const fmtCompetence = comp => comp ? comp.slice(5, 7) + '/' + comp.slice(0, 4) : '';
   // Mesmo cálculo de private.task_step_dates (banco). Datas em 'AAAA-MM-DD'.
   const iso = d => d.toISOString().slice(0, 10);
   const parse = s => new Date(s + 'T00:00:00Z');
@@ -70,7 +73,7 @@
       if (filters.sector && sectorKey(currentStep(task)?.sector) !== sectorKey(filters.sector)) return false;
       if (filters.onlyLate && dueState(task, today) !== 'late') return false;
       if (term) {
-        const hay = fold([task.title, task.description, task.template_name, clientsById?.get(task.client_id)?.name].join(' '));
+        const hay = fold([task.title, task.description, task.template_name, clientsById?.get(task.client_id)?.name, fmtCompetence(task.competence)].join(' '));
         if (!hay.includes(term)) return false;
       }
       return true;
@@ -114,6 +117,7 @@
     task_note_required: 'Informe um motivo ou texto.',
     task_template_unavailable: 'O modelo de fluxo não está disponível.',
     task_client_unavailable: 'O cliente não está disponível.',
+    task_competence_invalid: 'Informe a competência no formato mês/ano.',
     task_not_assigned: 'Esta tarefa não tem responsável.',
     task_already_yours: 'Você já é o responsável por esta tarefa.'
   };
@@ -125,6 +129,6 @@
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);

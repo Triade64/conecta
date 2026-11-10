@@ -31,6 +31,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 17. `supabase/tasks-assign-recurring.sql` (responsável, avisos e tarefas recorrentes; requer pg_cron)
 18. `supabase/tasks-step-deadlines.sql` (prazo por etapa e feriados)
 19. `supabase/tasks-recurrence-competence.sql` (competência da recorrência)
+20. `supabase/tasks-competence.sql` (competência como campo da tarefa)
 
 ## Calendário do escritório
 
@@ -83,6 +84,7 @@ Os participantes da louça (lavar e secar) e da varrição são configurados em 
 A aba **Tarefas** controla o fluxo de uma atividade, para um cliente, entre setores. Qualquer colaborador ativo cria tarefas; cada tarefa pertence a um cliente e segue um **modelo de fluxo**: uma sequência de etapas, cada uma com um setor (por exemplo, Atendimento → Fiscal → Contábil).
 
 - **Modelos de fluxo** (qualquer colaborador cria; editar ou inativar é de quem criou ou de administradores; botão *Modelos de fluxo*): informe o nome da atividade e adicione as etapas na ordem do fluxo, escolhendo o setor na lista oficial (Dpto. Fiscal, Dpto. Contábil, Dpto. Pessoal, Administrador) uma descrição opcional e o **prazo da etapa** (dia do mês, de 1 a 31); use ↑ ↓ para reordenar. Variações como "Fiscal" ou "Departamento Fiscal" são tratadas como o mesmo setor. A tarefa copia a sequência ao ser criada; editar o modelo depois não altera tarefas em andamento.
+- **Competência**: ao criar uma tarefa, informe a competência (mês/ano); a tela sugere o mês anterior. As recorrências preenchem a competência sozinhas. Ela aparece na lista ("Comp. 10/2026") e no detalhe, e a busca encontra por ela.
 - **Prazos por etapa**: não há prazo geral da tarefa. Ao criar a tarefa, cada etapa com prazo recebe a próxima data com aquele dia a partir da criação (dia 31 em mês curto vale o último dia), nunca antes do prazo da etapa anterior; se o dia da etapa seguinte for menor, ela vai para o mês seguinte. Prazo em sábado, domingo ou feriado passa para o próximo dia útil. Atrasos, filtros e o resumo usam o prazo da **etapa atual**. Os prazos são fixados na criação; mudar o modelo ou os feriados depois não altera tarefas existentes.
 - **Feriados** (administradores, botão *Feriados*): já vêm cadastrados os nacionais de 2026 e 2027. Inclua Carnaval, feriados estaduais e municipais e os anos seguintes.
 - **Andamento**: somente o setor da etapa atual (ou um administrador) pode **repassar** para a próxima etapa ou **devolver** à anterior com motivo. Repassar na última etapa conclui a tarefa. O criador ou um administrador pode **cancelar** com motivo. Quem enxerga a tarefa pode comentar. Cada movimentação fica no histórico, com autor e horário.

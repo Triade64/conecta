@@ -145,6 +145,7 @@
       <div class="field"><label for="ntTitle">Título</label><input id="ntTitle" maxlength="160" placeholder="Ex.: Abertura de filial — competência 11/2026"></div>
       <div class="field"><label for="ntDesc">Descrição (opcional)</label><textarea id="ntDesc" rows="3" maxlength="4000"></textarea></div>
       <div class="tasks-inline">
+      <div class="field"><label for="ntComp">Competência</label><input id="ntComp" type="month" value="${flow.previousMonth(today())}"></div>
       <div class="field"><label for="ntPriority">Prioridade</label><select id="ntPriority"><option value="normal">Normal</option><option value="alta">Alta</option><option value="baixa">Baixa</option></select></div></div>
       <p class="tasks-error" role="alert"></p>
       <div class="modal-actions"><button class="secondary" type="button" data-close>Cancelar</button><button class="primary" type="submit">Criar tarefa</button></div></form>`);
@@ -166,7 +167,7 @@
         }
         if (!clientId) throw { userMessage: 'Selecione ou cadastre o cliente.' };
         if ($('ntTitle').value.trim().length < 3) throw { userMessage: 'Informe um título com pelo menos 3 caracteres.' };
-        check(await api.rpc('task_create', { p_client: clientId, p_template: $('ntTemplate').value, p_title: $('ntTitle').value, p_description: $('ntDesc').value, p_priority: $('ntPriority').value, p_due: null }));
+        check(await api.rpc('task_create', { p_client: clientId, p_template: $('ntTemplate').value, p_title: $('ntTitle').value, p_description: $('ntDesc').value, p_priority: $('ntPriority').value, p_due: null, p_competence: $('ntComp').value || null }));
         d.close(); toast('Tarefa criada.'); await load();
       });
     };
@@ -195,7 +196,7 @@
     const late = flow.dueState(task, today());
     const typed = host.querySelector('#tdNote')?.value || '';
     host.innerHTML = `<div class="tasks-head"><div><h2>${esc(task.title)}</h2><p>${esc(cl?.name || 'Cliente')} · ${esc(task.template_name)}</p></div><button class="text-btn" type="button" data-close-detail aria-label="Fechar">✕</button></div>
-      <div class="tasks-meta"><span class="tasks-pill status-${esc(task.status)}">${STATUS[task.status]}</span><span class="tasks-pill prio-${esc(task.priority)}">Prioridade ${PRIORITY[task.priority]}</span>${flow.currentDue(task) && task.status === 'open' ? `<span class="tasks-pill due-${late}">Prazo do ${esc(p.sector)}: ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : late === 'today' ? ' · hoje' : ''}</span>` : ''}</div>
+      <div class="tasks-meta"><span class="tasks-pill status-${esc(task.status)}">${STATUS[task.status]}</span><span class="tasks-pill prio-${esc(task.priority)}">Prioridade ${PRIORITY[task.priority]}</span>${task.competence ? `<span class="tasks-pill">Competência ${flow.fmtCompetence(task.competence)}</span>` : ''}${flow.currentDue(task) && task.status === 'open' ? `<span class="tasks-pill due-${late}">Prazo do ${esc(p.sector)}: ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : late === 'today' ? ' · hoje' : ''}</span>` : ''}</div>
       ${task.status === 'open' ? `<div class="tasks-assignee"><span>${task.assigned_to ? `Responsável: <strong>${esc(task.assigned_name || 'Colaborador')}</strong>` : `Sem responsável no ${esc(p.sector)}`}</span>${allow.claim ? `<button class="secondary" type="button" data-act="claim">${task.assigned_to ? 'Assumir no lugar' : 'Assumir'}</button>` : ''}${allow.release ? '<button class="text-btn" type="button" data-act="release">Liberar</button>' : ''}</div>` : ''}
       ${task.description ? `<p class="tasks-desc">${esc(task.description)}</p>` : ''}
       <ol class="tasks-track">${stepTrack(task)}</ol>
@@ -374,7 +375,7 @@
     if (!rows.length) { host.innerHTML = `<div class="empty">${tasks.length ? 'Nenhuma tarefa encontrada com estes filtros.' : 'Nenhuma tarefa ainda. Use “+ Nova tarefa” para iniciar um fluxo.'}</div>`; return; }
     host.innerHTML = rows.map(task => {
       const p = flow.progress(task), late = flow.dueState(task, t), mine = flow.isMyTurn(task, c);
-      return `<button type="button" class="card tasks-item${mine ? ' mine' : ''}" data-task="${esc(task.id)}"><div class="tasks-item-main"><strong>${esc(map.get(task.client_id)?.name || 'Cliente')}</strong><span>${esc(task.title)}</span><small>${esc(task.template_name)}${task.status === 'open' && task.assigned_to ? ` · com ${esc(task.assigned_name || 'colaborador')}` : ''}</small></div>
+      return `<button type="button" class="card tasks-item${mine ? ' mine' : ''}" data-task="${esc(task.id)}"><div class="tasks-item-main"><strong>${esc(map.get(task.client_id)?.name || 'Cliente')}</strong><span>${esc(task.title)}</span><small>${task.competence ? 'Comp. ' + flow.fmtCompetence(task.competence) + ' · ' : ''}${esc(task.template_name)}${task.status === 'open' && task.assigned_to ? ` · com ${esc(task.assigned_name || 'colaborador')}` : ''}</small></div>
         <div class="tasks-item-side"><span class="tasks-pill status-${esc(task.status)}">${task.status === 'open' ? `Etapa ${p.index + 1}/${p.total} · ${esc(p.sector)}` : STATUS[task.status]}</span>${task.priority === 'alta' && flow.isOpen(task) ? '<span class="tasks-pill prio-alta">Alta</span>' : ''}${flow.currentDue(task) && flow.isOpen(task) ? `<span class="tasks-pill due-${late}" title="Prazo da etapa atual">até ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : ''}</span>` : ''}</div></button>`;
     }).join('');
     host.querySelectorAll('[data-task]').forEach(b => { b.onclick = () => openDetail(b.dataset.task); });
