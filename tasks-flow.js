@@ -4,6 +4,9 @@
   // o que mostrar e quais botões habilitar.
   const FROM = 'áàâãäéèêëíìîïóòôõöúùûüç', TO = 'aaaaaeeeeiiiiooooouuuuc';
   const sectorKey = value => { const k = String(value ?? '').trim().toLowerCase().replace(/./g, c => { const i = FROM.indexOf(c); return i < 0 ? c : TO[i]; }).replace(/^(departamento|dpto|depto|dep)\.?\s*(de\s+)?/, '').trim(); return ['administrador', 'administracao', 'adm'].includes(k) ? 'administracao' : k; };
+  // Setores oficiais: os mesmos que o cadastro de colaboradores grava a partir do papel.
+  const SECTORS = ['Dpto. Fiscal', 'Dpto. Contábil', 'Dpto. Pessoal', 'Administrador'];
+  const canonicalSector = value => SECTORS.find(s => sectorKey(s) === sectorKey(value)) || String(value ?? '').trim();
   const stepAt = (task, index) => (task.steps || [])[index] || null;
   const currentStep = task => stepAt(task, task.current_step);
   const progress = task => ({
@@ -81,6 +84,6 @@
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);

@@ -27,6 +27,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 13. `supabase/tasks.sql` (fluxo de tarefas entre setores)
 14. `supabase/tasks-sector-aliases.sql`
 15. `supabase/tasks-open-templates.sql`
+16. `supabase/sectors-standard.sql` (padroniza nomes de setor em perfis, modelos e tarefas)
 
 ## Calendário do escritório
 
@@ -78,7 +79,7 @@ Os participantes da louça (lavar e secar) e da varrição são configurados em 
 
 A aba **Tarefas** controla o fluxo de uma atividade, para um cliente, entre setores. Qualquer colaborador ativo cria tarefas; cada tarefa pertence a um cliente e segue um **modelo de fluxo**: uma sequência de etapas, cada uma com um setor (por exemplo, Atendimento → Fiscal → Contábil).
 
-- **Modelos de fluxo** (qualquer colaborador cria; editar ou inativar é de quem criou ou de administradores; botão *Modelos de fluxo*): informe o nome da atividade e as etapas, uma por linha, no formato `Setor | descrição opcional`. O nome do setor deve ser igual ao campo *setor* do perfil dos colaboradores (acentos e caixa são ignorados). A tarefa copia a sequência ao ser criada; editar o modelo depois não altera tarefas em andamento.
+- **Modelos de fluxo** (qualquer colaborador cria; editar ou inativar é de quem criou ou de administradores; botão *Modelos de fluxo*): informe o nome da atividade e adicione as etapas na ordem do fluxo, escolhendo o setor na lista oficial (Dpto. Fiscal, Dpto. Contábil, Dpto. Pessoal, Administrador) e uma descrição opcional; use ↑ ↓ para reordenar. Variações como "Fiscal" ou "Departamento Fiscal" são tratadas como o mesmo setor. A tarefa copia a sequência ao ser criada; editar o modelo depois não altera tarefas em andamento.
 - **Andamento**: somente o setor da etapa atual (ou um administrador) pode **repassar** para a próxima etapa ou **devolver** à anterior com motivo. Repassar na última etapa conclui a tarefa. O criador ou um administrador pode **cancelar** com motivo. Quem enxerga a tarefa pode comentar. Cada movimentação fica no histórico, com autor e horário.
 - **Visões**: *Minha caixa* (tarefas na vez do seu setor), *Do meu setor* (todas em que o setor participa), *Enviadas por mim* e *Todas* (somente administradores), com filtros por situação, etapa, prioridade, atraso e busca por cliente ou título. O contador no menu mostra a caixa do seu setor.
 - **Clientes**: escolha na lista ou use *Novo cliente* ao criar a tarefa (nome e CNPJ/CPF opcional). Ainda não há tela para editar ou inativar clientes; administradores já têm essa permissão no banco.

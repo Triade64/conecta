@@ -99,3 +99,11 @@ test('contagem da caixa considera só tarefas abertas na vez do setor', () => {
   assert.equal(flow.inboxCount(tasks, atend), 1);
   assert.equal(flow.inboxCount(tasks, fiscal), 1);
 });
+
+test('canonicalSector converte variações para o nome oficial e preserva os demais', () => {
+  assert.equal(flow.canonicalSector('Fiscal'), 'Dpto. Fiscal');
+  assert.equal(flow.canonicalSector('Departamento Contábil'), 'Dpto. Contábil');
+  assert.equal(flow.canonicalSector('dpto pessoal'), 'Dpto. Pessoal');
+  assert.equal(flow.canonicalSector('Administração'), 'Administrador');
+  assert.equal(flow.canonicalSector(' Atendimento '), 'Atendimento');
+});

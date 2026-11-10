@@ -5,7 +5,7 @@
   const today = () => new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date());
   const fmtDate = iso => iso ? iso.split('-').reverse().join('/') : '';
   const fmtTime = iso => new Date(iso).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
-  const SECTORS = ['Dpto. Fiscal', 'Dpto. Contábil', 'Dpto. Pessoal', 'Administração'];
+  const SECTORS = flow.SECTORS;
   // Setores do filtro: os usados nos modelos e tarefas (um por chave), senão a lista padrão.
   const usedSectors = () => { const seen = new Map(); for (const x of [...templates, ...tasks]) for (const st of x.steps || []) { const k = flow.sectorKey(st.sector); if (k && !seen.has(k)) seen.set(k, st.sector); } return seen.size ? [...seen.values()].sort((a, b) => a.localeCompare(b, 'pt-BR')) : SECTORS; };
   const PRIORITY = { alta: 'Alta', normal: 'Normal', baixa: 'Baixa' };
@@ -182,11 +182,16 @@
         <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector).join(' → '))}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-copy="${esc(t.id)}">Duplicar</button>${ctx().admin || t.created_by === ctx().userId ? `<button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button>` : ''}</span></li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
         <form novalidate><h3>${item ? 'Editar modelo' : source ? 'Duplicar modelo: ' + esc(source.name) : 'Novo modelo'}</h3>
         <div class="field"><label for="tmName">Nome da atividade</label><input id="tmName" maxlength="120" value="${esc(draft?.name || '')}"></div>
-        <div class="field"><label for="tmSteps">Etapas, uma por linha: setor | descrição opcional</label><textarea id="tmSteps" rows="5" placeholder="Dpto. Fiscal | Apurar impostos\nDpto. Contábil | Fechamento">${esc(draft ? flow.stepsToText(draft.steps) : '')}</textarea><small>Setores usuais: ${SECTORS.join(', ')}. O nome precisa ser igual ao setor cadastrado no perfil dos colaboradores. Tarefas já criadas mantêm a sequência original.</small></div>
+        <div class="field"><span class="tasks-label">Etapas, na ordem do fluxo</span><ol class="tasks-step-rows" id="tmSteps"></ol><button class="text-btn" type="button" data-add-step>+ Adicionar etapa</button><small>Tarefas já criadas mantêm a sequência original.</small></div>
         ${item ? `<label class="tasks-check"><input id="tmActive" type="checkbox" ${item.active ? 'checked' : ''}> Modelo ativo</label>` : ''}
         <p class="tasks-error" role="alert"></p>
         <div class="modal-actions">${item || source ? '<button class="secondary" type="button" data-new>Novo modelo</button>' : ''}<button class="primary" type="submit">${item ? 'Salvar alterações' : 'Criar modelo'}</button></div></form>`;
       host.querySelector('[data-close]').onclick = () => d.close();
+      const rows = host.querySelector('#tmSteps');
+      const sectorOptions = current => { const list = SECTORS.includes(current) || !current ? SECTORS : [...SECTORS, current]; return list.map(s => `<option value="${esc(s)}"${s === current ? ' selected' : ''}>${esc(s)}${SECTORS.includes(s) ? '' : ' (fora do padrão)'}</option>`).join(''); };
+      const addRow = (step = {}) => { const li = document.createElement('li'); const sector = step.sector ? flow.canonicalSector(step.sector) : ''; li.innerHTML = `<select aria-label="Setor da etapa" data-step-sector><option value="">Setor…</option>${sectorOptions(sector)}</select><input aria-label="Descrição da etapa (opcional)" data-step-label maxlength="80" placeholder="Descrição (opcional)" value="${esc(step.label || '')}"><span class="tasks-step-buttons"><button class="text-btn" type="button" data-up title="Subir" aria-label="Subir etapa">↑</button><button class="text-btn" type="button" data-down title="Descer" aria-label="Descer etapa">↓</button><button class="text-btn" type="button" data-remove title="Remover" aria-label="Remover etapa">✕</button></span>`; li.querySelector('[data-up]').onclick = () => li.previousElementSibling?.before(li); li.querySelector('[data-down]').onclick = () => li.nextElementSibling?.after(li); li.querySelector('[data-remove]').onclick = () => { li.remove(); if (!rows.children.length) addRow(); }; rows.append(li); return li; };
+      (draft?.steps?.length ? draft.steps : [{}]).forEach(st => addRow(st));
+      host.querySelector('[data-add-step]').onclick = () => addRow().querySelector('select').focus();
       host.querySelectorAll('[data-edit]').forEach(b => { b.onclick = () => paint(b.dataset.edit); });
       host.querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => { paint(null, b.dataset.copy); const input = host.querySelector('#tmName'); input.focus(); input.select(); }; });
       host.querySelector('[data-new]')?.addEventListener('click', () => paint(null));
@@ -194,8 +199,9 @@
       host.querySelector('form').onsubmit = async event => {
         event.preventDefault();
         await guarded(host.querySelector('[type=submit]'), error, async () => {
-          const steps = flow.parseSteps(host.querySelector('#tmSteps').value), name = host.querySelector('#tmName').value.trim();
+          const all = [...rows.children].map(li => ({ sector: li.querySelector('[data-step-sector]').value, label: li.querySelector('[data-step-label]').value.trim() })), steps = all.filter(st => st.sector), name = host.querySelector('#tmName').value.trim();
           if (name.length < 2) throw { message: 'Informe o nome do modelo.' };
+          if (all.some(st => !st.sector && st.label)) throw { message: 'Escolha o setor de todas as etapas com descrição.' };
           if (!steps.length) throw { message: 'Informe ao menos uma etapa.' };
           const api = client();
           if (item) check(await api.from('task_templates').update({ name, steps, active: host.querySelector('#tmActive').checked, updated_at: new Date().toISOString() }).eq('id', item.id));
