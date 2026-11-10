@@ -277,13 +277,14 @@
       const opt = (list, selected) => list.map(x => `<option value="${esc(x.id)}"${x.id === selected ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
       const tplName = id => templates.find(t => t.id === id)?.name || 'Modelo removido';
       host.innerHTML = `<div class="tasks-head"><div><h2>Tarefas recorrentes</h2><p>Criadas automaticamente todo mês, às 6h do dia escolhido. Os prazos vêm das etapas do fluxo.</p></div><button class="text-btn" type="button" data-close aria-label="Fechar">✕</button></div>
-        <ul class="tasks-templates">${recurrences.map(r => `<li><div><strong>${esc(map.get(r.client_id)?.name || 'Cliente')} · ${esc(r.title)}</strong>${r.active ? '' : ' <small>(pausada)</small>'}<small>${esc(tplName(r.template_id))} · todo dia ${r.day_of_month}${r.last_period ? ' · última: ' + esc(r.last_period.split('-').reverse().join('/')) : ''}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-edit="${esc(r.id)}">Editar</button></span></li>`).join('') || '<li><small>Nenhuma recorrência cadastrada por você.</small></li>'}</ul>
+        <ul class="tasks-templates">${recurrences.map(r => `<li><div><strong>${esc(map.get(r.client_id)?.name || 'Cliente')} · ${esc(r.title)}</strong>${r.active ? '' : ' <small>(pausada)</small>'}<small>${esc(tplName(r.template_id))} · todo dia ${r.day_of_month} · competência: ${(r.competence_offset ?? -1) === 0 ? 'mês atual' : 'mês anterior'}${r.last_period ? ' · última: ' + esc(r.last_period.split('-').reverse().join('/')) : ''}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-edit="${esc(r.id)}">Editar</button></span></li>`).join('') || '<li><small>Nenhuma recorrência cadastrada por você.</small></li>'}</ul>
         <form novalidate><h3>${item ? 'Editar recorrência' : 'Nova recorrência'}</h3>
         <div class="tasks-inline"><div class="field"><label for="rcClient">Cliente</label><select id="rcClient"><option value="">Selecione…</option>${opt(activeClients, item?.client_id)}</select></div>
         <div class="field"><label for="rcTemplate">Fluxo</label><select id="rcTemplate"><option value="">Selecione…</option>${opt(activeTemplates, item?.template_id)}</select></div></div>
-        <div class="field"><label for="rcTitle">Título</label><input id="rcTitle" maxlength="160" placeholder="Ex.: Fechamento {mes}" value="${esc(item?.title || '')}"><small>Use {mes} para incluir o mês, por exemplo "Fechamento {mes}" vira "Fechamento 11/2026".</small></div>
+        <div class="field"><label for="rcTitle">Título</label><input id="rcTitle" maxlength="160" placeholder="Ex.: Fechamento {mes}" value="${esc(item?.title || '')}"><small>Use {mes} para incluir a competência, por exemplo "Pró-labore {mes}" criado em novembro vira "Pró-labore 10/2026" (competência do mês anterior).</small></div>
         <div class="field"><label for="rcDesc">Descrição (opcional)</label><textarea id="rcDesc" rows="2" maxlength="4000">${esc(item?.description || '')}</textarea></div>
         <div class="tasks-inline"><div class="field"><label for="rcDay">Criar no dia</label><input id="rcDay" type="number" min="1" max="28" value="${item?.day_of_month || 1}"></div>
+        <div class="field"><label for="rcComp">Competência</label><select id="rcComp"><option value="-1"${(item?.competence_offset ?? -1) === -1 ? ' selected' : ''}>Mês anterior</option><option value="0"${item?.competence_offset === 0 ? ' selected' : ''}>Mês atual</option></select></div>
         <div class="field"><label for="rcPriority">Prioridade</label><select id="rcPriority">${Object.entries(PRIORITY).map(([k, v]) => `<option value="${k}"${(item?.priority || 'normal') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div></div>
         ${item ? `<label class="tasks-check"><input id="rcActive" type="checkbox" ${item.active ? 'checked' : ''}> Recorrência ativa</label>` : '<small>Se o dia escolhido já passou neste mês, a primeira tarefa sai no próximo mês.</small>'}
         <p class="tasks-error" role="alert"></p>
@@ -301,7 +302,7 @@
         event.preventDefault();
         await guarded(host.querySelector('[type=submit]'), error, async () => {
           const day = Number($('rcDay').value);
-          const row = { client_id: $('rcClient').value, template_id: $('rcTemplate').value, title: $('rcTitle').value.trim(), description: $('rcDesc').value, priority: $('rcPriority').value, day_of_month: day };
+          const row = { client_id: $('rcClient').value, template_id: $('rcTemplate').value, title: $('rcTitle').value.trim(), description: $('rcDesc').value, priority: $('rcPriority').value, day_of_month: day, competence_offset: Number($('rcComp').value) };
           if (!row.client_id) throw { userMessage: 'Selecione o cliente.' };
           if (!row.template_id) throw { userMessage: 'Selecione o fluxo.' };
           if (row.title.length < 3) throw { userMessage: 'Informe um título com pelo menos 3 caracteres.' };

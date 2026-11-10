@@ -30,6 +30,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 16. `supabase/sectors-standard.sql` (padroniza nomes de setor em perfis, modelos e tarefas)
 17. `supabase/tasks-assign-recurring.sql` (responsável, avisos e tarefas recorrentes; requer pg_cron)
 18. `supabase/tasks-step-deadlines.sql` (prazo por etapa e feriados)
+19. `supabase/tasks-recurrence-competence.sql` (competência da recorrência)
 
 ## Calendário do escritório
 
@@ -89,7 +90,7 @@ A aba **Tarefas** controla o fluxo de uma atividade, para um cliente, entre seto
 - **Responsável**: na tarefa, quem é do setor da vez clica em **Assumir**; o nome aparece na lista e no detalhe. O responsável (ou um administrador) pode **Liberar**. Ao repassar, devolver ou encerrar, a tarefa volta a ficar sem responsável.
 - **Avisos**: quando uma tarefa chega à vez do seu setor por ação de outra pessoa (ou pela recorrência), o Conecta mostra uma notificação do Windows/navegador, se ativada, ou um aviso na tela.
 - **Visão geral**: a faixa *Tarefas do seu setor* mostra quantas estão na caixa, atrasadas, vencendo hoje e com você, além das próximas três.
-- **Recorrências** (botão *Recorrências*): cada colaborador cadastra as suas (cliente, fluxo, título, dia do mês de 1 a 28 e prioridade; os prazos vêm das etapas do fluxo, contados a partir do dia em que a tarefa é criada). Todo dia às 6h (Brasília) o banco cria as tarefas do mês cujo dia já chegou, uma vez por mês. Use `{mes}` no título para incluir o mês ("Fechamento {mes}" vira "Fechamento 11/2026"). Se o dia já passou quando a recorrência é criada, a primeira tarefa sai no mês seguinte.
+- **Recorrências** (botão *Recorrências*): cada colaborador cadastra as suas (cliente, fluxo, título, dia do mês de 1 a 28 e prioridade; os prazos vêm das etapas do fluxo, contados a partir do dia em que a tarefa é criada). Todo dia às 6h (Brasília) o banco cria as tarefas do mês cujo dia já chegou, uma vez por mês. Escolha a **competência**: *mês anterior* (padrão, para o trabalho retroativo) ou *mês atual*. Use `{mes}` (ou `{competencia}`) no título para incluir a competência: "Pró-labore {mes}" criado em novembro vira "Pró-labore 10/2026" com mês anterior, ou "11/2026" com mês atual. Os prazos das etapas continuam contados a partir do dia em que a tarefa é criada. Se o dia já passou quando a recorrência é criada, a primeira tarefa sai no mês seguinte.
 - **Clientes**: escolha na lista ou use *Novo cliente* ao criar a tarefa (nome e CNPJ/CPF opcional). Ainda não há tela para editar ou inativar clientes; administradores já têm essa permissão no banco.
 - **Segurança**: as tabelas só aceitam leitura direta; todas as mudanças passam pelas funções `task_create`, `task_advance`, `task_return`, `task_cancel` e `task_comment`, que validam setor, sequência e versão (alterações simultâneas são recusadas). Visibilidade: criador, setores que participam do fluxo e administradores. As atualizações chegam em tempo real.
 
