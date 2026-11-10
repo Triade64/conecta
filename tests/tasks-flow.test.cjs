@@ -176,3 +176,11 @@ test('competência: mês anterior, exibição e busca', () => {
   const tasks = [mk({ id: 'a', competence: '2026-10' }), mk({ id: 'b', competence: '2026-09' })];
   assert.deepEqual(flow.filterTasks(tasks, { view: 'sent', term: '10/2026' }, atend, new Map(), '2026-11-10').map(t => t.id), ['a']);
 });
+
+test('filtro por competência, incluindo "sem competência"', () => {
+  const tasks = [mk({ id: 'a', competence: '2026-10' }), mk({ id: 'b', competence: '2026-09' }), mk({ id: 'c' })];
+  const run = competence => flow.filterTasks(tasks, { view: 'sent', competence }, atend, new Map(), '2026-11-10').map(t => t.id).sort();
+  assert.deepEqual(run('2026-10'), ['a']);
+  assert.deepEqual(run('-'), ['c']);
+  assert.deepEqual(run(''), ['a', 'b', 'c']);
+});

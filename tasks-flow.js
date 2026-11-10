@@ -70,6 +70,7 @@
       if (!inView(task, filters.view || 'inbox', ctx)) return false;
       if (filters.status && task.status !== filters.status) return false;
       if (filters.priority && task.priority !== filters.priority) return false;
+      if (filters.competence && (filters.competence === '-' ? !!task.competence : task.competence !== filters.competence)) return false;
       if (filters.sector && sectorKey(currentStep(task)?.sector) !== sectorKey(filters.sector)) return false;
       if (filters.onlyLate && dueState(task, today) !== 'late') return false;
       if (term) {

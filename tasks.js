@@ -15,7 +15,7 @@
 
   let tasks = [], clients = [], templates = [], recurrences = [], holidays = [], ready = false, channel = null, timer = null, lastLoad = 0, generation = 0;
   let detail = null, detailEvents = [];
-  const filters = { view: 'inbox', status: 'open', term: '', priority: '', sector: '', onlyLate: false };
+  const filters = { view: 'inbox', status: 'open', term: '', priority: '', sector: '', competence: '', onlyLate: false };
   const client = () => window.conectaTasksApi?.client();
   const ctx = () => {
     const p = window.conectaCurrentProfile || {}, u = window.conectaCurrentUser || {};
@@ -354,6 +354,7 @@
       <div class="field"><label for="tfStatus">Situação</label><select id="tfStatus"><option value="">Todas</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
       <div class="field"><label for="tfSector">Etapa atual</label><select id="tfSector"><option value="">Todos os setores</option>${usedSectors().map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('')}</select></div>
       <div class="field"><label for="tfPriority">Prioridade</label><select id="tfPriority"><option value="">Todas</option>${Object.entries(PRIORITY).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
+      <div class="field"><label for="tfComp">Competência</label><select id="tfComp"></select></div>
       <label class="tasks-check"><input id="tfLate" type="checkbox"> Só atrasadas</label></div>
       <div class="tasks-list" id="taskList" aria-live="polite"></div>`;
     const $ = id => document.getElementById(id);
@@ -361,12 +362,20 @@
     $('taskNewBtn').onclick = newTaskDialog; $('taskRecurBtn').onclick = recurrencesDialog; $('taskHolidaysBtn') && ($('taskHolidaysBtn').onclick = holidaysDialog);$('taskTemplatesBtn') && ($('taskTemplatesBtn').onclick = templatesDialog);
     document.querySelectorAll('[data-tview]').forEach(b => { b.onclick = () => { filters.view = b.dataset.tview; document.querySelectorAll('[data-tview]').forEach(x => x.setAttribute('aria-selected', String(x === b))); paintList(); }; });
     const bind = (id, key, prop = 'value') => { $(id).oninput = $(id).onchange = () => { filters[key] = $(id)[prop]; paintList(); }; };
-    bind('tfTerm', 'term'); bind('tfStatus', 'status'); bind('tfSector', 'sector'); bind('tfPriority', 'priority'); bind('tfLate', 'onlyLate', 'checked');
+    bind('tfTerm', 'term'); bind('tfStatus', 'status'); bind('tfSector', 'sector'); bind('tfPriority', 'priority'); bind('tfComp', 'competence'); bind('tfLate', 'onlyLate', 'checked');
     paintList();
   }
   function paintList() {
     const host = document.getElementById('taskList'); if (!host || !visible()) return;
     const c = ctx(), map = clientsById(), t = today();
+    // Competências existentes, da mais recente para a mais antiga; mantém a escolhida mesmo sem tarefas.
+    const compSelect = document.getElementById('tfComp');
+    if (compSelect) {
+      const comps = [...new Set(tasks.map(x => x.competence).filter(Boolean).concat(filters.competence && filters.competence !== '-' ? [filters.competence] : []))].sort().reverse();
+      const compOptions = '<option value="">Todas</option>' + comps.map(v => `<option value="${esc(v)}">${flow.fmtCompetence(v)}</option>`).join('') + (tasks.some(x => !x.competence) ? '<option value="-">Sem competência</option>' : '');
+      if (compSelect.innerHTML !== compOptions) compSelect.innerHTML = compOptions;
+      compSelect.value = filters.competence || '';
+    }
     const sectorSelect = document.getElementById('tfSector'), sectorOptions = '<option value="">Todos os setores</option>' + usedSectors().map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
     if (sectorSelect && sectorSelect.innerHTML !== sectorOptions) { sectorSelect.innerHTML = sectorOptions; sectorSelect.value = [...sectorSelect.options].some(o => flow.sectorKey(o.value) === flow.sectorKey(filters.sector)) ? [...sectorSelect.options].find(o => flow.sectorKey(o.value) === flow.sectorKey(filters.sector)).value : ''; }
     document.querySelectorAll('[data-tcount]').forEach(el => { const v = el.dataset.tcount; el.textContent = String(tasks.filter(x => flow.isOpen(x) && flow.filterTasks([x], { view: v }, c, map, t).length).length); });
