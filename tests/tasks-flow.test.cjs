@@ -204,3 +204,12 @@ test('prazos contam do mês seguinte à competência', () => {
   assert.deepEqual(flow.stepDates(steps, flow.deadlineStart('2026-10', '2026-11-10'), holidays).map(s => s.due_date),
     ['2026-11-09', '2026-11-09', '2026-11-16', '2026-11-30']);
 });
+
+test('alterar data de conclusão: só em concluídas, pelo criador ou admin', () => {
+  const done = mk({ status: 'done', created_by: 'u-atend' });
+  assert.equal(flow.can(done, atend).setCompleted, true);
+  assert.equal(flow.can(done, fiscal).setCompleted, false);
+  assert.equal(flow.can(done, admin).setCompleted, true);
+  assert.equal(flow.can(mk(), atend).setCompleted, false);
+  assert.equal(flow.officeDate('2026-11-10T02:00:00Z'), '2026-11-09'); // 23h de 09/11 em Brasília
+});

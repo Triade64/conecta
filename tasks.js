@@ -11,7 +11,7 @@
   const PRIORITY = { alta: 'Alta', normal: 'Normal', baixa: 'Baixa' };
   const STATUS = { open: 'Aberta', done: 'Concluída', cancelled: 'Cancelada' };
   const VIEW_LABEL = { inbox: 'Minha caixa', sector: 'Do meu setor', sent: 'Enviadas por mim', all: 'Todas' };
-  const EVENT_LABEL = { created: 'Tarefa criada', advanced: 'Repassada', returned: 'Devolvida', completed: 'Concluída', cancelled: 'Cancelada', comment: 'Comentário', claimed: 'Assumida', released: 'Responsável liberado' };
+  const EVENT_LABEL = { created: 'Tarefa criada', advanced: 'Repassada', returned: 'Devolvida', completed: 'Concluída', cancelled: 'Cancelada', comment: 'Comentário', claimed: 'Assumida', released: 'Responsável liberado', completion_changed: 'Data de conclusão alterada' };
 
   let tasks = [], clients = [], templates = [], recurrences = [], holidays = [], ready = false, channel = null, timer = null, lastLoad = 0, generation = 0;
   let detail = null, detailEvents = [];
@@ -198,6 +198,7 @@
     host.innerHTML = `<div class="tasks-head"><div><h2>${esc(task.title)}</h2><p>${esc(cl?.name || 'Cliente')} · ${esc(task.template_name)}</p></div><button class="text-btn" type="button" data-close-detail aria-label="Fechar">✕</button></div>
       <div class="tasks-meta"><span class="tasks-pill status-${esc(task.status)}">${STATUS[task.status]}</span><span class="tasks-pill prio-${esc(task.priority)}">Prioridade ${PRIORITY[task.priority]}</span>${task.competence ? `<span class="tasks-pill">Competência ${flow.fmtCompetence(task.competence)}</span>` : ''}${flow.currentDue(task) && task.status === 'open' ? `<span class="tasks-pill due-${late}">Prazo do ${esc(p.sector)}: ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : late === 'today' ? ' · hoje' : ''}</span>` : ''}</div>
       ${task.status === 'open' ? `<div class="tasks-assignee"><span>${task.assigned_to ? `Responsável: <strong>${esc(task.assigned_name || 'Colaborador')}</strong>` : `Sem responsável no ${esc(p.sector)}`}</span>${allow.claim ? `<button class="secondary" type="button" data-act="claim">${task.assigned_to ? 'Assumir no lugar' : 'Assumir'}</button>` : ''}${allow.release ? '<button class="text-btn" type="button" data-act="release">Liberar</button>' : ''}</div>` : ''}
+      ${task.status === 'done' ? `<div class="tasks-assignee"><span>Concluída em <strong>${task.completed_at ? fmtDate(flow.officeDate(task.completed_at)) : '—'}</strong></span>${allow.setCompleted ? `<input type="date" id="tdDoneDate" aria-label="Nova data de conclusão" value="${task.completed_at ? flow.officeDate(task.completed_at) : ''}" min="${flow.officeDate(task.created_at)}" max="${today()}"><button class="secondary" type="button" data-act="completed-at">Alterar data</button>` : ''}</div>` : ''}
       ${task.description ? `<p class="tasks-desc">${esc(task.description)}</p>` : ''}
       <ol class="tasks-track">${stepTrack(task)}</ol>
       <h3>Histórico</h3><ul class="tasks-events">${detailEvents.map(e => `<li class="ev-${esc(e.kind)}"><strong>${EVENT_LABEL[e.kind]}</strong>${e.kind === 'advanced' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : e.kind === 'returned' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : ''}<small>${esc(e.actor_name || 'Colaborador')} · ${fmtTime(e.created_at)}</small>${e.note ? `<p>${esc(e.note)}</p>` : ''}</li>`).join('') || '<li><small>Carregando…</small></li>'}</ul>
@@ -213,6 +214,11 @@
         const note = host.querySelector('#tdNote').value, api = client(), v = task.version;
         const act = button.dataset.act;
         if (act === 'comment') check(await api.rpc('task_comment', { p_task: task.id, p_note: note }));
+        if (act === 'completed-at') {
+          const day = host.querySelector('#tdDoneDate').value;
+          if (!day) throw { userMessage: 'Informe a data de conclusão.' };
+          check(await api.rpc('task_set_completed_at', { p_task: task.id, p_version: v, p_date: day, p_note: note }));
+        }
         if (act === 'claim' || act === 'release') check(await api.rpc('task_claim', { p_task: task.id, p_version: v, p_release: act === 'release' }));
         if (act === 'advance') check(await api.rpc('task_advance', { p_task: task.id, p_version: v, p_note: note }));
         if (act === 'return') check(await api.rpc('task_return', { p_task: task.id, p_version: v, p_note: note }));
@@ -225,6 +231,13 @@
     });
   }
 
+  // Listas recolhíveis: lembra a escolha por navegador (padrão: recolhida).
+  const collapseKey = name => 'conecta-tasks-open:' + name;
+  const collapseOpen = name => { try { return localStorage.getItem(collapseKey(name)) === '1'; } catch { return false; } };
+  const bindCollapse = host => host.querySelectorAll('details[data-collapse]').forEach(d => {
+    d.addEventListener('toggle', () => { try { localStorage.setItem(collapseKey(d.dataset.collapse), d.open ? '1' : '0'); } catch {} });
+  });
+
   function templatesDialog() {
     const d = openDialog('<div class="tasks-detail"></div>', true);
     const copyName = name => { const taken = new Set(templates.map(t => flow.sectorKey(t.name))); let n = 1, out; do { out = 'Cópia de ' + name + (n > 1 ? ' (' + n + ')' : ''); n++; } while (taken.has(flow.sectorKey(out))); return out.slice(0, 120); };
@@ -234,7 +247,7 @@
       const source = !item && copyId && templates.find(t => t.id === copyId);
       const draft = item || (source ? { name: copyName(source.name), steps: source.steps } : null);
       host.innerHTML = `<div class="tasks-head"><div><h2>Modelos de fluxo</h2><p>Cada modelo define a sequência de setores de uma atividade.</p></div><button class="text-btn" type="button" data-close aria-label="Fechar">✕</button></div>
-        <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector + (s.due_day ? ' (dia ' + s.due_day + ')' : '')).join(' → '))}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-copy="${esc(t.id)}">Duplicar</button>${ctx().admin || t.created_by === ctx().userId ? `<button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button>` : ''}</span></li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
+        <details class="tasks-collapse" data-collapse="templates"${collapseOpen('templates') ? ' open' : ''}><summary>Modelos cadastrados (${templates.length})</summary><ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector + (s.due_day ? ' (dia ' + s.due_day + ')' : '')).join(' → '))}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-copy="${esc(t.id)}">Duplicar</button>${ctx().admin || t.created_by === ctx().userId ? `<button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button>` : ''}</span></li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul></details>
         <form novalidate><h3>${item ? 'Editar modelo' : source ? 'Duplicar modelo: ' + esc(source.name) : 'Novo modelo'}</h3>
         <div class="field"><label for="tmName">Nome da atividade</label><input id="tmName" maxlength="120" value="${esc(draft?.name || '')}"></div>
         <div class="field"><span class="tasks-label">Etapas, na ordem do fluxo</span><ol class="tasks-step-rows" id="tmSteps"></ol><button class="text-btn" type="button" data-add-step>+ Adicionar etapa</button><small>Tarefas já criadas mantêm a sequência original.</small></div>
@@ -248,6 +261,7 @@
       (draft?.steps?.length ? draft.steps : [{}]).forEach(st => addRow(st));
       host.querySelector('[data-add-step]').onclick = () => addRow().querySelector('select').focus();
       host.querySelectorAll('[data-edit]').forEach(b => { b.onclick = () => paint(b.dataset.edit); });
+      bindCollapse(host);
       host.querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => { paint(null, b.dataset.copy); const input = host.querySelector('#tmName'); input.focus(); input.select(); }; });
       host.querySelector('[data-new]')?.addEventListener('click', () => paint(null));
       const error = host.querySelector('.tasks-error');
@@ -385,7 +399,7 @@
     host.innerHTML = rows.map(task => {
       const p = flow.progress(task), late = flow.dueState(task, t), mine = flow.isMyTurn(task, c);
       return `<button type="button" class="card tasks-item${mine ? ' mine' : ''}" data-task="${esc(task.id)}"><div class="tasks-item-main"><strong>${esc(map.get(task.client_id)?.name || 'Cliente')}</strong><span>${esc(task.title)}</span><small>${task.competence ? 'Comp. ' + flow.fmtCompetence(task.competence) + ' · ' : ''}${esc(task.template_name)}${task.status === 'open' && task.assigned_to ? ` · com ${esc(task.assigned_name || 'colaborador')}` : ''}</small></div>
-        <div class="tasks-item-side"><span class="tasks-pill status-${esc(task.status)}">${task.status === 'open' ? `Etapa ${p.index + 1}/${p.total} · ${esc(p.sector)}` : STATUS[task.status]}</span>${task.priority === 'alta' && flow.isOpen(task) ? '<span class="tasks-pill prio-alta">Alta</span>' : ''}${flow.currentDue(task) && flow.isOpen(task) ? `<span class="tasks-pill due-${late}" title="Prazo da etapa atual">até ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : ''}</span>` : ''}</div></button>`;
+        <div class="tasks-item-side"><span class="tasks-pill status-${esc(task.status)}">${task.status === 'open' ? `Etapa ${p.index + 1}/${p.total} · ${esc(p.sector)}` : STATUS[task.status] + (task.status === 'done' && task.completed_at ? ' em ' + fmtDate(flow.officeDate(task.completed_at)) : '')}</span>${task.priority === 'alta' && flow.isOpen(task) ? '<span class="tasks-pill prio-alta">Alta</span>' : ''}${flow.currentDue(task) && flow.isOpen(task) ? `<span class="tasks-pill due-${late}" title="Prazo da etapa atual">até ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : ''}</span>` : ''}</div></button>`;
     }).join('');
     host.querySelectorAll('[data-task]').forEach(b => { b.onclick = () => openDetail(b.dataset.task); });
   }

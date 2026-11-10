@@ -22,6 +22,7 @@
       advance: turn,
       return: turn && task.current_step > 0,
       cancel: open && (task.created_by === ctx.userId || !!ctx.admin),
+      setCompleted: task.status === 'done' && (task.created_by === ctx.userId || !!ctx.admin),
       comment: true,
       claim: turn && task.assigned_to !== ctx.userId,
       release: open && !!task.assigned_to && (task.assigned_to === ctx.userId || !!ctx.admin)
@@ -43,6 +44,8 @@
     const [y, m] = comp.split('-').map(Number);
     return m === 12 ? (y + 1) + '-01-01' : y + '-' + String(m + 1).padStart(2, '0') + '-01';
   };
+  // Data (AAAA-MM-DD) de um instante no horário de Brasília.
+  const officeDate = ts => ts ? new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date(ts)) : '';
   const fmtCompetence = comp => comp ? comp.slice(5, 7) + '/' + comp.slice(0, 4) : '';
   // Mesmo cálculo de private.task_step_dates (banco). Datas em 'AAAA-MM-DD'.
   const iso = d => d.toISOString().slice(0, 10);
@@ -130,6 +133,8 @@
     task_template_unavailable: 'O modelo de fluxo não está disponível.',
     task_client_unavailable: 'O cliente não está disponível.',
     task_competence_invalid: 'Informe a competência no formato mês/ano.',
+    task_not_done: 'Só é possível alterar a data de tarefas concluídas.',
+    task_completion_date_invalid: 'A data de conclusão não pode ser futura nem anterior à criação da tarefa.',
     task_not_assigned: 'Esta tarefa não tem responsável.',
     task_already_yours: 'Você já é o responsável por esta tarefa.'
   };
@@ -141,6 +146,6 @@
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { deadlineStart, previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { officeDate, deadlineStart, previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);

@@ -59,3 +59,12 @@ html[data-theme="dark"] .task-summary-list button{background:transparent}
 html[data-theme="dark"] .task-summary-list small.due-late{color:#ffaca4}html[data-theme="dark"] .task-summary-list small.due-today{color:#f1bd8e}
 @media(max-height:720px){.task-summary{padding:6px 12px;gap:4px}.task-summary-list{display:none}}
 .tasks-track li small.due-late{color:#b42318;font-weight:600}html[data-theme="dark"] .tasks-track li small.due-late{color:#ffaca4}
+.tasks-collapse{border:1px solid var(--line);border-radius:10px;margin:8px 0 4px}
+.tasks-collapse>summary{cursor:pointer;padding:9px 12px;font-size:13px;font-weight:600;list-style:none;display:flex;align-items:center;gap:8px}
+.tasks-collapse>summary::-webkit-details-marker{display:none}
+.tasks-collapse>summary::before{content:"▸";color:var(--muted);transition:transform .15s}
+.tasks-collapse[open]>summary::before{transform:rotate(90deg)}
+.tasks-collapse>summary::after{content:"Mostrar";margin-left:auto;font-size:12px;font-weight:500;color:var(--purple)}
+.tasks-collapse[open]>summary::after{content:"Recolher"}
+.tasks-collapse>.tasks-templates{padding:0 10px 10px;max-height:260px;overflow:auto}
+html[data-theme="dark"] .tasks-collapse>summary::after{color:#b6ebc7}
