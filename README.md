@@ -24,6 +24,12 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 10. `supabase/profile-photos.sql`
 11. `supabase/chat-gif-attachments.sql`
 12. `supabase/kitchen-calendar.sql`
+13. `supabase/tasks.sql` (fluxo de tarefas entre setores)
+14. `supabase/tasks-sector-aliases.sql`
+15. `supabase/tasks-open-templates.sql`
+16. `supabase/sectors-standard.sql` (padroniza nomes de setor em perfis, modelos e tarefas)
+17. `supabase/tasks-assign-recurring.sql` (responsável, avisos e tarefas recorrentes; requer pg_cron)
+18. `supabase/tasks-step-deadlines.sql` (prazo por etapa e feriados)
 
 ## Calendário do escritório
 
@@ -70,6 +76,24 @@ Em **Administração → Canais e membros → Criar canal**, informe o nome e se
 Os canais personalizados aparecem na lateral, em Conversas e como destino em Nova mensagem/Encaminhar. Os canais de setor continuam com suas permissões atuais. A migração `supabase/managed-channels.sql` deve ser aplicada depois dos scripts existentes. As políticas restringem mensagens, anexos e pontos de leitura aos membros, inclusive para administradores. A verificação SQL `tests/managed-channels.rls.sql` cria fixtures apenas dentro de uma transação que termina em rollback.
 
 Os participantes da louça (lavar e secar) e da varrição são configurados em listas separadas em **Calendário → Configurar rodízio**. Cada lista segue sua própria ordem alfabética; a louça exige pelo menos duas pessoas e a varrição pode ter uma. Deixar uma lista vazia desativa a tarefa. Configurações antigas mantêm os participantes atuais até o administrador editar as listas. As turmas do café continuam independentes. Em Ajustar dia, as opções de substituição respeitam a lista da tarefa.
+
+## Tarefas entre setores
+
+A aba **Tarefas** controla o fluxo de uma atividade, para um cliente, entre setores. Qualquer colaborador ativo cria tarefas; cada tarefa pertence a um cliente e segue um **modelo de fluxo**: uma sequência de etapas, cada uma com um setor (por exemplo, Atendimento → Fiscal → Contábil).
+
+- **Modelos de fluxo** (qualquer colaborador cria; editar ou inativar é de quem criou ou de administradores; botão *Modelos de fluxo*): informe o nome da atividade e adicione as etapas na ordem do fluxo, escolhendo o setor na lista oficial (Dpto. Fiscal, Dpto. Contábil, Dpto. Pessoal, Administrador) uma descrição opcional e o **prazo da etapa** (dia do mês, de 1 a 31); use ↑ ↓ para reordenar. Variações como "Fiscal" ou "Departamento Fiscal" são tratadas como o mesmo setor. A tarefa copia a sequência ao ser criada; editar o modelo depois não altera tarefas em andamento.
+- **Prazos por etapa**: não há prazo geral da tarefa. Ao criar a tarefa, cada etapa com prazo recebe a próxima data com aquele dia a partir da criação (dia 31 em mês curto vale o último dia), nunca antes do prazo da etapa anterior; se o dia da etapa seguinte for menor, ela vai para o mês seguinte. Prazo em sábado, domingo ou feriado passa para o próximo dia útil. Atrasos, filtros e o resumo usam o prazo da **etapa atual**. Os prazos são fixados na criação; mudar o modelo ou os feriados depois não altera tarefas existentes.
+- **Feriados** (administradores, botão *Feriados*): já vêm cadastrados os nacionais de 2026 e 2027. Inclua Carnaval, feriados estaduais e municipais e os anos seguintes.
+- **Andamento**: somente o setor da etapa atual (ou um administrador) pode **repassar** para a próxima etapa ou **devolver** à anterior com motivo. Repassar na última etapa conclui a tarefa. O criador ou um administrador pode **cancelar** com motivo. Quem enxerga a tarefa pode comentar. Cada movimentação fica no histórico, com autor e horário.
+- **Visões**: *Minha caixa* (tarefas na vez do seu setor), *Do meu setor* (todas em que o setor participa), *Enviadas por mim* e *Todas* (somente administradores), com filtros por situação, etapa, prioridade, atraso e busca por cliente ou título. O contador no menu mostra a caixa do seu setor.
+- **Responsável**: na tarefa, quem é do setor da vez clica em **Assumir**; o nome aparece na lista e no detalhe. O responsável (ou um administrador) pode **Liberar**. Ao repassar, devolver ou encerrar, a tarefa volta a ficar sem responsável.
+- **Avisos**: quando uma tarefa chega à vez do seu setor por ação de outra pessoa (ou pela recorrência), o Conecta mostra uma notificação do Windows/navegador, se ativada, ou um aviso na tela.
+- **Visão geral**: a faixa *Tarefas do seu setor* mostra quantas estão na caixa, atrasadas, vencendo hoje e com você, além das próximas três.
+- **Recorrências** (botão *Recorrências*): cada colaborador cadastra as suas (cliente, fluxo, título, dia do mês de 1 a 28 e prioridade; os prazos vêm das etapas do fluxo, contados a partir do dia em que a tarefa é criada). Todo dia às 6h (Brasília) o banco cria as tarefas do mês cujo dia já chegou, uma vez por mês. Use `{mes}` no título para incluir o mês ("Fechamento {mes}" vira "Fechamento 11/2026"). Se o dia já passou quando a recorrência é criada, a primeira tarefa sai no mês seguinte.
+- **Clientes**: escolha na lista ou use *Novo cliente* ao criar a tarefa (nome e CNPJ/CPF opcional). Ainda não há tela para editar ou inativar clientes; administradores já têm essa permissão no banco.
+- **Segurança**: as tabelas só aceitam leitura direta; todas as mudanças passam pelas funções `task_create`, `task_advance`, `task_return`, `task_cancel` e `task_comment`, que validam setor, sequência e versão (alterações simultâneas são recusadas). Visibilidade: criador, setores que participam do fluxo e administradores. As atualizações chegam em tempo real.
+
+Validação: `node --test tests/tasks-flow.test.cjs` (lógica) e `tests/tasks.rls.sql` (permissões e fluxo no banco; roda em transação com rollback e exige um administrador e quatro outros perfis ativos).
 
 ## Links e colagem no chat
 
