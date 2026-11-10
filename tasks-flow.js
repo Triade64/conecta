@@ -55,10 +55,15 @@
       return { ...rest, due_date: iso(due) };
     });
   };
+  const reachedSector = (task, ctx) => {
+    const key = sectorKey(ctx.sector), last = task.status === 'done' ? (task.steps || []).length - 1 : task.current_step;
+    return (task.steps || []).some((s, i) => i <= last && sectorKey(s.sector) === key);
+  };
   const VIEWS = ['inbox', 'sector', 'sent', 'all'];
   const inView = (task, view, ctx) => {
     if (view === 'inbox') return isMyTurn(task, ctx);
-    if (view === 'sector') return (task.sector_keys || []).includes(sectorKey(ctx.sector));
+    // Só tarefas que já chegaram ao setor: etapa atual dele ou etapas dele já percorridas.
+    if (view === 'sector') return reachedSector(task, ctx);
     if (view === 'sent') return task.created_by === ctx.userId;
     return !!ctx.admin;
   };

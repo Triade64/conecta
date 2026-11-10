@@ -50,7 +50,8 @@ test('visões: caixa, setor, enviadas e todas', () => {
   const ids = (view, ctx) => flow.filterTasks(tasks, { view, status: 'open' }, ctx, new Map(), '2026-11-09').map(t => t.id).sort();
   assert.deepEqual(ids('inbox', atend), ['a']);
   assert.deepEqual(ids('inbox', fiscal), ['b']);
-  assert.deepEqual(ids('sector', fiscal), ['a', 'b']);
+  assert.deepEqual(ids('sector', fiscal), ['b', 'c']);    // 'a' ainda não chegou ao Fiscal; 'c' já passou
+  assert.deepEqual(ids('sector', atend), ['a', 'b', 'c']); // 'b' e 'c' já passaram pelo Atendimento
   assert.deepEqual(ids('sent', atend), ['a', 'b']);
   assert.deepEqual(ids('all', fiscal), []);
   assert.deepEqual(ids('all', admin), ['a', 'b', 'c']);
@@ -183,4 +184,13 @@ test('filtro por competência, incluindo "sem competência"', () => {
   assert.deepEqual(run('2026-10'), ['a']);
   assert.deepEqual(run('-'), ['c']);
   assert.deepEqual(run(''), ['a', 'b', 'c']);
+});
+
+test('"Do meu setor": aparece ao chegar, continua depois de passar, concluídas contam todas as etapas', () => {
+  const contab = { userId: 'u-c', sector: 'Dpto. Contábil', admin: false };
+  const run = (task, ctx) => flow.filterTasks([task], { view: 'sector' }, ctx, new Map(), '2026-11-10').length === 1;
+  assert.equal(run(mk({ current_step: 1 }), contab), false);
+  assert.equal(run(mk({ current_step: 2 }), contab), true);
+  assert.equal(run(mk({ current_step: 2, status: 'done' }), contab), true);
+  assert.equal(run(mk({ current_step: 0, status: 'cancelled' }), contab), false);
 });
