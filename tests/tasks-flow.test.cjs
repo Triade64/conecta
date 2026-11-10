@@ -226,3 +226,13 @@ test('Minha caixa: só tarefas abertas assumidas por mim', () => {
   assert.deepEqual(flow.filterTasks(tasks, { view: 'inbox' }, ctxF, new Map(), '2026-11-10').map(t => t.id), ['a']);
   assert.equal(flow.inboxCount(tasks, ctxF), 3); // contador do menu: tudo na vez do setor
 });
+
+test('dueSoon: hoje até o próximo dia útil, respeitando responsável', () => {
+  const f = require('../tasks-flow.js');
+  const mk = (id, due, extra = {}) => ({ id, status: 'open', current_step: 0, steps: [{ sector: 'Dpto. Fiscal', due_date: due }], ...extra });
+  const c = { userId: 'u1', sector: 'Fiscal' };
+  // 13/11/2026 é sexta: o próximo dia útil é segunda 16/11.
+  const list = [mk('a', '2026-11-13'), mk('b', '2026-11-16'), mk('c', '2026-11-17'), mk('d', '2026-11-12'), mk('e', '2026-11-13', { assigned_to: 'u2' }), mk('f', '2026-11-16', { assigned_to: 'u1' })];
+  assert.deepStrictEqual(f.dueSoon(list, c, '2026-11-13').map(t => t.id), ['a', 'b', 'f']);
+  assert.deepStrictEqual(f.dueSoon(list, c, '2026-11-13', new Set(['2026-11-16'])).map(t => t.id), ['a', 'b', 'c', 'f']);
+});

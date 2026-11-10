@@ -13,7 +13,7 @@
   const VIEW_LABEL = { inbox: 'Minha caixa', sector: 'Do meu setor', sent: 'Enviadas por mim', all: 'Todas' };
   const EVENT_LABEL = { created: 'Tarefa criada', advanced: 'Repassada', returned: 'Devolvida', completed: 'Concluída', cancelled: 'Cancelada', comment: 'Comentário', claimed: 'Assumida', released: 'Responsável liberado', completion_changed: 'Data de conclusão alterada' };
 
-  let tasks = [], clients = [], templates = [], recurrences = [], holidays = [], ready = false, channel = null, timer = null, lastLoad = 0, generation = 0;
+  let tasks = [], clients = [], templates = [], recurrences = [], holidays = [], ready = false, channel = null, timer = null, dueTimer = null, lastLoad = 0, generation = 0;
   let detail = null, detailEvents = [];
   const filters = { view: 'inbox', status: 'open', term: '', priority: '', sector: '', competence: '', onlyLate: false };
   const client = () => window.conectaTasksApi?.client();
@@ -47,6 +47,7 @@
     const previous = ready ? tasks : null;
     tasks = t.data; clients = c.data; templates = m.data; recurrences = r.error ? [] : r.data; holidays = h.error ? [] : h.data; ready = true; lastLoad = Date.now();
     notifyArrivals(flow.arrivals(previous, tasks, ctx()));
+    notifyDueSoon();
     if (detail) { detail = tasks.find(x => x.id === detail.id) || null; if (!detail) closeDetail(); }
     paintNav(); if (visible()) paintList();
     if (detail) paintDetail();
@@ -61,9 +62,10 @@
     });
     channel.subscribe(status => { if (status === 'SUBSCRIBED') schedule(); });
     void load().catch(e => console.warn(e));
+    dueTimer = setInterval(() => { if (ready) notifyDueSoon(); }, 60 * 60 * 1000);
   }
   function stop() {
-    clearTimeout(timer); generation++;
+    clearTimeout(timer); clearInterval(dueTimer); generation++;
     if (channel) { client()?.removeChannel(channel); channel = null; }
   }
   function reset() { stop(); tasks = []; clients = []; templates = []; recurrences = []; holidays = []; ready = false; detail = null; detailEvents = []; closeDialogs(); paintNav(); if (visible()) paintList(); }
@@ -77,6 +79,22 @@
     const onClick = list.length === 1 ? () => openTaskFromOutside(list[0].id) : () => nav.click();
     const shown = window.conectaShowNotification?.('Nova tarefa para o seu setor', body, 'task-' + list[0].id + '-' + list[0].version, false, onClick);
     if (!shown && document.visibilityState === 'visible') toast('Nova tarefa para o seu setor: ' + body);
+  }
+  // Aviso de prazo próximo: uma vez por dia para cada tarefa (guardado no navegador).
+  function notifyDueSoon() {
+    const day = today();
+    const list = flow.dueSoon(tasks, ctx(), day, holidaySet()).filter(t => {
+      const key = 'conecta-task-due-' + t.id + '-' + flow.currentDue(t) + '-' + day;
+      try { if (localStorage.getItem(key)) return false; localStorage.setItem(key, '1'); } catch {}
+      return true;
+    });
+    if (!list.length) return;
+    const map = clientsById();
+    const when = t => flow.currentDue(t) === day ? 'vence hoje' : 'vence em ' + fmtDate(flow.currentDue(t));
+    const body = list.length === 1 ? (map.get(list[0].client_id)?.name || 'Cliente') + ' · ' + list[0].title + ' — ' + when(list[0]) : list.length + ' tarefas com prazo vencendo hoje ou no próximo dia útil.';
+    const onClick = list.length === 1 ? () => openTaskFromOutside(list[0].id) : () => nav.click();
+    const shown = window.conectaShowNotification?.('Prazo próximo', body, 'task-due-' + day + '-' + list[0].id, false, onClick);
+    if (!shown && document.visibilityState === 'visible') toast('Prazo próximo: ' + body);
   }
   function openTaskFromOutside(id) { nav.click(); openDetail(id); }
 

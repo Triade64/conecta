@@ -117,6 +117,17 @@
     const inbox = tasks.filter(t => isMyTurn(t, ctx));
     return { inbox: inbox.length, late: inbox.filter(t => dueState(t, today) === 'late').length, today: inbox.filter(t => dueState(t, today) === 'today').length, mine: inbox.filter(t => t.assigned_to === ctx.userId).length };
   };
+  // Tarefas na vez do usuário cujo prazo da etapa vence hoje ou até o próximo dia útil.
+  // Com responsável, só ele é avisado; sem responsável, todo o setor.
+  const dueSoon = (tasks, ctx, today, holidays = new Set()) => {
+    const next = parse(today); next.setUTCDate(next.getUTCDate() + 1);
+    const limit = iso(businessDay(next, holidays));
+    return tasks.filter(t => {
+      if (!isMyTurn(t, ctx) || (t.assigned_to && t.assigned_to !== ctx.userId)) return false;
+      const due = currentDue(t);
+      return !!due && due >= today && due <= limit;
+    });
+  };
   const inboxCount = (tasks, ctx) => tasks.filter(task => isMyTurn(task, ctx)).length;
   // Normaliza a lista digitada no editor de modelos: "Setor | descrição opcional", um por linha.
   const parseSteps = text => String(text || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
@@ -149,6 +160,6 @@
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { officeDate, deadlineStart, previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { dueSoon, officeDate, deadlineStart, previousMonth, fmtCompetence, currentDue, stepDates, arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);
