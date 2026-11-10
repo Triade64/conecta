@@ -70,7 +70,9 @@
   };
   const VIEWS = ['inbox', 'sector', 'sent', 'all'];
   const inView = (task, view, ctx) => {
-    if (view === 'inbox') return isMyTurn(task, ctx);
+    // Minha caixa: só tarefas abertas que eu assumi. "turn" (uso interno): na vez do meu setor.
+    if (view === 'inbox') return isOpen(task) && !!ctx.userId && task.assigned_to === ctx.userId;
+    if (view === 'turn') return isMyTurn(task, ctx);
     // Só tarefas que já chegaram ao setor: etapa atual dele ou etapas dele já percorridas.
     if (view === 'sector') return reachedSector(task, ctx);
     if (view === 'sent') return task.created_by === ctx.userId;

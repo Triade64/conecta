@@ -48,8 +48,9 @@ test('cancelar é do criador ou admin, e só em tarefas abertas', () => {
 test('visões: caixa, setor, enviadas e todas', () => {
   const tasks = [mk({ id: 'a' }), mk({ id: 'b', current_step: 1 }), mk({ id: 'c', created_by: 'x', current_step: 2, sector_keys: ['contabil'] })];
   const ids = (view, ctx) => flow.filterTasks(tasks, { view, status: 'open' }, ctx, new Map(), '2026-11-09').map(t => t.id).sort();
-  assert.deepEqual(ids('inbox', atend), ['a']);
-  assert.deepEqual(ids('inbox', fiscal), ['b']);
+  assert.deepEqual(ids('inbox', atend), []);               // ninguém assumiu
+  assert.deepEqual(ids('turn', atend), ['a']);
+  assert.deepEqual(ids('turn', fiscal), ['b']);
   assert.deepEqual(ids('sector', fiscal), ['b', 'c']);    // 'a' ainda não chegou ao Fiscal; 'c' já passou
   assert.deepEqual(ids('sector', atend), ['a', 'b', 'c']); // 'b' e 'c' já passaram pelo Atendimento
   assert.deepEqual(ids('sent', atend), ['a', 'b']);
@@ -212,4 +213,16 @@ test('alterar data de conclusão: só em concluídas, pelo criador ou admin', ()
   assert.equal(flow.can(done, admin).setCompleted, true);
   assert.equal(flow.can(mk(), atend).setCompleted, false);
   assert.equal(flow.officeDate('2026-11-10T02:00:00Z'), '2026-11-09'); // 23h de 09/11 em Brasília
+});
+
+test('Minha caixa: só tarefas abertas assumidas por mim', () => {
+  const ctxF = { userId: 'u-fiscal', sector: 'Dpto. Fiscal', admin: false };
+  const tasks = [
+    mk({ id: 'a', current_step: 1, assigned_to: 'u-fiscal' }),
+    mk({ id: 'b', current_step: 1 }),
+    mk({ id: 'c', current_step: 1, assigned_to: 'outro' }),
+    mk({ id: 'd', status: 'done', assigned_to: 'u-fiscal' })
+  ];
+  assert.deepEqual(flow.filterTasks(tasks, { view: 'inbox' }, ctxF, new Map(), '2026-11-10').map(t => t.id), ['a']);
+  assert.equal(flow.inboxCount(tasks, ctxF), 3); // contador do menu: tudo na vez do setor
 });

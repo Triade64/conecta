@@ -95,8 +95,8 @@
     if (!ready || !c.userId) html = '<div class="task-summary-head"><strong>Tarefas do seu setor</strong><span>Carregando…</span></div>';
     else {
       const s = flow.summary(tasks, c, t), map = clientsById();
-      const next = flow.filterTasks(tasks, { view: 'inbox', status: 'open' }, c, map, t).slice(0, 3);
-      const pills = [`<span class="tasks-pill">${s.inbox} na caixa</span>`];
+      const next = flow.filterTasks(tasks, { view: 'turn', status: 'open' }, c, map, t).slice(0, 3);
+      const pills = [`<span class="tasks-pill">${s.inbox} no setor</span>`];
       if (s.late) pills.push(`<span class="tasks-pill due-late">${s.late} atrasada${s.late > 1 ? 's' : ''}</span>`);
       if (s.today) pills.push(`<span class="tasks-pill due-today">${s.today} vence${s.today > 1 ? 'm' : ''} hoje</span>`);
       if (s.mine) pills.push(`<span class="tasks-pill">${s.mine} comigo</span>`);
@@ -404,7 +404,7 @@
     document.querySelectorAll('[data-tcount]').forEach(el => { const v = el.dataset.tcount; el.textContent = String(tasks.filter(x => flow.isOpen(x) && flow.filterTasks([x], { view: v }, c, map, t).length).length); });
     const rows = flow.filterTasks(tasks, filters, c, map, t);
     if (!ready) { host.innerHTML = '<div class="empty">Carregando tarefas…</div>'; return; }
-    if (!rows.length) { host.innerHTML = `<div class="empty">${tasks.length ? 'Nenhuma tarefa encontrada com estes filtros.' : 'Nenhuma tarefa ainda. Use “+ Nova tarefa” para iniciar um fluxo.'}</div>`; return; }
+    if (!rows.length) { host.innerHTML = `<div class="empty">${filters.view === 'inbox' && tasks.length ? 'Você não assumiu nenhuma tarefa aberta. As tarefas na vez do seu setor ficam em “Do meu setor”: abra uma e clique em Assumir.' : tasks.length ? 'Nenhuma tarefa encontrada com estes filtros.' :'Nenhuma tarefa ainda. Use “+ Nova tarefa” para iniciar um fluxo.'}</div>`; return; }
     host.innerHTML = rows.map(task => {
       const p = flow.progress(task), late = flow.dueState(task, t), mine = flow.isMyTurn(task, c);
       return `<button type="button" class="card tasks-item${mine ? ' mine' : ''}" data-task="${esc(task.id)}"><div class="tasks-item-main"><strong>${esc(map.get(task.client_id)?.name || 'Cliente')}</strong><span>${esc(task.title)}</span><small>${task.competence ? 'Comp. ' + flow.fmtCompetence(task.competence) + ' · ' : ''}${esc(task.template_name)}${task.status === 'open' && task.assigned_to ? ` · com ${esc(task.assigned_name || 'colaborador')}` : ''}</small></div>
