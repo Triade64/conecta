@@ -9,3 +9,8 @@
 html[data-theme="dark"] .sidebar-brand .brand-mark{background:#f5f5ef;box-shadow:none}
 html[data-theme="dark"] .sidebar-brand .brand-product{color:#f0dfc2}
 html[data-theme="dark"] .sidebar-brand .brand-company{color:#a9ab9f}
+/* Mesmo cabeçalho na tela de login, um pouco maior e sem divisória. */
+.auth-brand.sidebar-brand{margin:0 0 26px;padding:0;border-bottom:0;gap:13px}
+.auth-brand.sidebar-brand .brand-mark{width:48px;height:48px;padding:7px;border-radius:14px}
+.auth-brand.sidebar-brand .brand-product{font-size:25px}
+.auth-brand.sidebar-brand .brand-company{font-size:11px}
