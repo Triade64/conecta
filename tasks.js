@@ -175,38 +175,43 @@
 
   const stepTrack = task => (task.steps || []).map((s, i) => {
     const cls = task.status === 'done' || i < task.current_step ? 'done' : i === task.current_step && task.status === 'open' ? 'current' : '';
-    return `<li class="${cls}"><strong>${esc(s.sector)}</strong>${s.label ? `<small>${esc(s.label)}</small>` : ''}${s.due_date ? `<small class="${cls === 'current' && s.due_date < today() ? 'due-late' : ''}">até ${fmtDate(s.due_date)}</small>` : ''}</li>`;
+    const done = cls === 'done' && s.done_date;
+    return `<li class="${cls}"><strong>${esc(s.sector)}</strong>${s.label ? `<small>${esc(s.label)}</small>` : ''}${s.due_date ? `<small class="${cls === 'current' && s.due_date < today() ? 'due-late' : ''}">até ${fmtDate(s.due_date)}</small>` : ''}${done ? `<small class="${s.due_date && s.done_date > s.due_date ? 'due-late' : 'step-done'}">feita em ${fmtDate(s.done_date)}</small>` : ''}</li>`;
   }).join('');
 
   function openDetail(id) {
     detail = tasks.find(t => t.id === id); if (!detail) return; detailEvents = [];
+    document.querySelectorAll('dialog[data-detail]').forEach(old => { old.dataset.stale = '1'; if (old.open) old.close(); old.remove(); });
     const d = openDialog('<div class="tasks-detail"></div>', true);
-    d.addEventListener('close', () => { detail = null; });
+    // O evento de fechamento chega depois; só limpa se ainda for esta tarefa (outra pode já ter sido aberta).
+    d.addEventListener('close', () => { if (!d.dataset.stale && detail?.id === id) detail = null; });
     d.dataset.detail = '1'; paintDetail(); void loadEvents();
   }
-  function closeDetail() { document.querySelector('dialog[data-detail]')?.close(); }
+  function closeDetail() { document.querySelector('dialog[data-detail][open]')?.close(); }
   async function loadEvents() {
     if (!detail) return; const id = detail.id;
-    const { data, error } = await client().from('task_events').select('id,kind,from_step,to_step,note,actor_name,created_at').eq('task_id', id).order('id');
+    const { data, error } = await client().from('task_events').select('id,kind,from_step,to_step,note,actor_name,created_at,done_on').eq('task_id', id).order('id');
     if (error || !detail || detail.id !== id) return; detailEvents = data; paintDetail();
   }
   function paintDetail() {
-    const host = document.querySelector('dialog[data-detail] .tasks-detail'); if (!host || !detail) return;
+    const host = document.querySelector('dialog[data-detail][open] .tasks-detail'); if (!host || !detail) return;
     const task = detail, c = ctx(), allow = flow.can(task, c), p = flow.progress(task), cl = clientsById().get(task.client_id);
     const late = flow.dueState(task, today());
-    const typed = host.querySelector('#tdNote')?.value || '';
+    const typed = host.querySelector('#tdNote')?.value || '', typedDone = host.querySelector('#tdStepDone')?.value || '';
     host.innerHTML = `<div class="tasks-head"><div><h2>${esc(task.title)}</h2><p>${esc(cl?.name || 'Cliente')} · ${esc(task.template_name)}</p></div><button class="text-btn" type="button" data-close-detail aria-label="Fechar">✕</button></div>
       <div class="tasks-meta"><span class="tasks-pill status-${esc(task.status)}">${STATUS[task.status]}</span><span class="tasks-pill prio-${esc(task.priority)}">Prioridade ${PRIORITY[task.priority]}</span>${task.competence ? `<span class="tasks-pill">Competência ${flow.fmtCompetence(task.competence)}</span>` : ''}${flow.currentDue(task) && task.status === 'open' ? `<span class="tasks-pill due-${late}">Prazo do ${esc(p.sector)}: ${fmtDate(flow.currentDue(task))}${late === 'late' ? ' · atrasada' : late === 'today' ? ' · hoje' : ''}</span>` : ''}</div>
       ${task.status === 'open' ? `<div class="tasks-assignee"><span>${task.assigned_to ? `Responsável: <strong>${esc(task.assigned_name || 'Colaborador')}</strong>` : `Sem responsável no ${esc(p.sector)}`}</span>${allow.claim ? `<button class="secondary" type="button" data-act="claim">${task.assigned_to ? 'Assumir no lugar' : 'Assumir'}</button>` : ''}${allow.release ? '<button class="text-btn" type="button" data-act="release">Liberar</button>' : ''}</div>` : ''}
       ${task.status === 'done' ? `<div class="tasks-assignee"><span>Concluída em <strong>${task.completed_at ? fmtDate(flow.officeDate(task.completed_at)) : '—'}</strong></span>${allow.setCompleted ? `<input type="date" id="tdDoneDate" aria-label="Nova data de conclusão" value="${task.completed_at ? flow.officeDate(task.completed_at) : ''}" min="${flow.officeDate(task.created_at)}" max="${today()}"><button class="secondary" type="button" data-act="completed-at">Alterar data</button>` : ''}</div>` : ''}
       ${task.description ? `<p class="tasks-desc">${esc(task.description)}</p>` : ''}
       <ol class="tasks-track">${stepTrack(task)}</ol>
-      <h3>Histórico</h3><ul class="tasks-events">${detailEvents.map(e => `<li class="ev-${esc(e.kind)}"><strong>${EVENT_LABEL[e.kind]}</strong>${e.kind === 'advanced' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : e.kind === 'returned' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : ''}<small>${esc(e.actor_name || 'Colaborador')} · ${fmtTime(e.created_at)}</small>${e.note ? `<p>${esc(e.note)}</p>` : ''}</li>`).join('') || '<li><small>Carregando…</small></li>'}</ul>
+      <h3>Histórico</h3><ul class="tasks-events">${detailEvents.map(e => `<li class="ev-${esc(e.kind)}"><strong>${EVENT_LABEL[e.kind]}</strong>${e.kind === 'advanced' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : e.kind === 'returned' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : ''}${e.done_on && ['advanced', 'completed'].includes(e.kind) ? ` · etapa concluída em ${fmtDate(e.done_on)}` : ''}<small>${esc(e.actor_name || 'Colaborador')} · ${fmtTime(e.created_at)}</small>${e.note ? `<p>${esc(e.note)}</p>` : ''}</li>`).join('') || '<li><small>Carregando…</small></li>'}</ul>
       <div class="field"><label for="tdNote">Observação ${task.status === 'open' ? '(obrigatória para devolver ou cancelar)' : ''}</label><textarea id="tdNote" rows="2" maxlength="2000"></textarea></div>
+      ${allow.advance ? `<div class="field tasks-step-done"><label for="tdStepDone">Etapa concluída em</label><input id="tdStepDone" type="date" value="${today()}" min="${flow.officeDate(task.created_at)}" max="${today()}"></div>` : ''}
       <p class="tasks-error" role="alert"></p>
       <div class="modal-actions tasks-actions"><button class="secondary" type="button" data-act="comment">Comentar</button>${allow.cancel ? '<button class="secondary danger" type="button" data-act="cancel">Cancelar tarefa</button>' : ''}${allow.return ? '<button class="secondary" type="button" data-act="return">Devolver</button>' : ''}${allow.advance ? `<button class="primary" type="button" data-act="advance">${p.index + 1 >= p.total ? 'Concluir tarefa' : 'Repassar para ' + esc(task.steps[p.index + 1]?.sector || '')}</button>` : ''}</div>
       ${task.status === 'open' && !allow.advance ? `<p class="tasks-wait">Aguardando o setor ${esc(p.sector)}.</p>` : ''}`;
     host.querySelector('#tdNote').value = typed;
+    if (typedDone && host.querySelector('#tdStepDone')) host.querySelector('#tdStepDone').value = typedDone;
     host.querySelector('[data-close-detail]').onclick = closeDetail;
     const error = host.querySelector('.tasks-error');
     host.querySelectorAll('[data-act]').forEach(button => {
@@ -220,7 +225,11 @@
           check(await api.rpc('task_set_completed_at', { p_task: task.id, p_version: v, p_date: day, p_note: note }));
         }
         if (act === 'claim' || act === 'release') check(await api.rpc('task_claim', { p_task: task.id, p_version: v, p_release: act === 'release' }));
-        if (act === 'advance') check(await api.rpc('task_advance', { p_task: task.id, p_version: v, p_note: note }));
+        if (act === 'advance') {
+          const doneOn = host.querySelector('#tdStepDone')?.value;
+          if (!doneOn) throw { userMessage: 'Informe a data em que a etapa foi concluída.' };
+          check(await api.rpc('task_advance', { p_task: task.id, p_version: v, p_note: note, p_done_on: doneOn }));
+        }
         if (act === 'return') check(await api.rpc('task_return', { p_task: task.id, p_version: v, p_note: note }));
         if (act === 'cancel' && !confirm('Cancelar esta tarefa? A ação não pode ser desfeita.')) return;
         if (act === 'cancel') check(await api.rpc('task_cancel', { p_task: task.id, p_version: v, p_note: note }));

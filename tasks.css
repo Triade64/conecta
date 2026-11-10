@@ -68,3 +68,5 @@ html[data-theme="dark"] .task-summary-list small.due-late{color:#ffaca4}html[dat
 .tasks-collapse[open]>summary::after{content:"Recolher"}
 .tasks-collapse>.tasks-templates{padding:0 10px 10px;max-height:260px;overflow:auto}
 html[data-theme="dark"] .tasks-collapse>summary::after{color:#b6ebc7}
+.tasks-step-done{max-width:220px;margin:4px 0 0}
+.tasks-track li small.step-done{color:#1e7a5c}html[data-theme="dark"] .tasks-track li small.step-done{color:#b6ebc7}

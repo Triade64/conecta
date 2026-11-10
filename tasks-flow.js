@@ -135,6 +135,7 @@
     task_competence_invalid: 'Informe a competência no formato mês/ano.',
     task_not_done: 'Só é possível alterar a data de tarefas concluídas.',
     task_completion_date_invalid: 'A data de conclusão não pode ser futura nem anterior à criação da tarefa.',
+    task_step_done_date_invalid: 'A data da etapa não pode ser futura nem anterior à criação da tarefa.',
     task_not_assigned: 'Esta tarefa não tem responsável.',
     task_already_yours: 'Você já é o responsável por esta tarefa.'
   };

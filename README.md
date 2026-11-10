@@ -34,6 +34,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 20. `supabase/tasks-competence.sql` (competência como campo da tarefa)
 21. `supabase/tasks-deadline-from-competence.sql` (prazos contados do mês seguinte à competência)
 22. `supabase/tasks-completion-date.sql` (alterar a data de conclusão)
+23. `supabase/tasks-step-done-date.sql` (data de conclusão de cada etapa ao repassar)
 
 ## Calendário do escritório
 
@@ -89,6 +90,7 @@ A aba **Tarefas** controla o fluxo de uma atividade, para um cliente, entre seto
 - **Competência**: ao criar uma tarefa, informe a competência (mês/ano); a tela sugere o mês anterior. As recorrências preenchem a competência sozinhas. Ela aparece na lista ("Comp. 10/2026") e no detalhe, e a busca encontra por ela.
 - **Prazos por etapa**: não há prazo geral da tarefa. Ao criar a tarefa, cada etapa com prazo recebe a próxima data com aquele dia a partir do **mês seguinte à competência** (competência 10/2026 → prazos em novembro/2026; sem competência, a partir da criação) (dia 31 em mês curto vale o último dia), nunca antes do prazo da etapa anterior; se o dia da etapa seguinte for menor, ela vai para o mês seguinte. Prazo em sábado, domingo ou feriado passa para o próximo dia útil. Atrasos, filtros e o resumo usam o prazo da **etapa atual**. Os prazos são fixados na criação; mudar o modelo ou os feriados depois não altera tarefas existentes.
 - **Feriados** (administradores, botão *Feriados*): já vêm cadastrados os nacionais de 2026 e 2027. Inclua Carnaval, feriados estaduais e municipais e os anos seguintes.
+- **Etapa concluída em**: ao repassar ou concluir, informe o dia em que a sua etapa foi concluída (padrão: hoje; não pode ser futura nem anterior à criação). A trilha mostra "feita em dd/mm" (em vermelho se passou do prazo da etapa) e o histórico registra a data. Na última etapa, essa data vira a data de conclusão da tarefa.
 - **Data de conclusão**: numa tarefa concluída, o criador ou um administrador pode corrigir a data em que ela foi concluída (não pode ser futura nem anterior à criação). A alteração fica no histórico.
 - **Andamento**: somente o setor da etapa atual (ou um administrador) pode **repassar** para a próxima etapa ou **devolver** à anterior com motivo. Repassar na última etapa conclui a tarefa. O criador ou um administrador pode **cancelar** com motivo. Quem enxerga a tarefa pode comentar. Cada movimentação fica no histórico, com autor e horário.
 - **Visões**: *Minha caixa* (tarefas na vez do seu setor), *Do meu setor* (tarefas que já chegaram ao seu setor: na sua etapa ou que já passaram por ela), *Enviadas por mim* e *Todas* (somente administradores), com filtros por situação, etapa, prioridade, competência, atraso e busca por cliente ou título. O contador no menu mostra a caixa do seu setor.
