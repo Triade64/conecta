@@ -236,3 +236,10 @@ test('dueSoon: hoje até o próximo dia útil, respeitando responsável', () => 
   assert.deepStrictEqual(f.dueSoon(list, c, '2026-11-13').map(t => t.id), ['a', 'b', 'f']);
   assert.deepStrictEqual(f.dueSoon(list, c, '2026-11-13', new Set(['2026-11-16'])).map(t => t.id), ['a', 'b', 'c', 'f']);
 });
+test('Minha caixa esconde tarefa assumida que já passou para outro setor', () => {
+  const ctx = { userId: 'u1', sector: 'Dpto. Fiscal' };
+  const steps = [{ sector: 'Dpto. Fiscal', label: 'A' }, { sector: 'Dpto. Contábil', label: 'B' }];
+  const here = { status: 'open', current_step: 0, steps, assigned_to: 'u1' };
+  const moved = { ...here, current_step: 1 };
+  assert.equal(flow.filterTasks([here, moved], { view: 'inbox' }, ctx, new Map(), '2026-11-10').length, 1);
+});
