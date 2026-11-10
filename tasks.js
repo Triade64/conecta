@@ -172,19 +172,23 @@
 
   function templatesDialog() {
     const d = openDialog('<div class="tasks-detail"></div>', true);
-    const paint = (editing) => {
+    const copyName = name => { const taken = new Set(templates.map(t => flow.sectorKey(t.name))); let n = 1, out; do { out = 'Cópia de ' + name + (n > 1 ? ' (' + n + ')' : ''); n++; } while (taken.has(flow.sectorKey(out))); return out.slice(0, 120); };
+    const paint = (editing, copyId) => {
       const host = d.querySelector('.tasks-detail');
       const item = editing && templates.find(t => t.id === editing);
+      const source = !item && copyId && templates.find(t => t.id === copyId);
+      const draft = item || (source ? { name: copyName(source.name), steps: source.steps } : null);
       host.innerHTML = `<div class="tasks-head"><div><h2>Modelos de fluxo</h2><p>Cada modelo define a sequência de setores de uma atividade.</p></div><button class="text-btn" type="button" data-close aria-label="Fechar">✕</button></div>
-        <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector).join(' → '))}</small></div>${ctx().admin || t.created_by === ctx().userId ? `<button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button>` : ''}</li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
-        <form novalidate><h3>${item ? 'Editar modelo' : 'Novo modelo'}</h3>
-        <div class="field"><label for="tmName">Nome da atividade</label><input id="tmName" maxlength="120" value="${esc(item?.name || '')}"></div>
-        <div class="field"><label for="tmSteps">Etapas, uma por linha: setor | descrição opcional</label><textarea id="tmSteps" rows="5" placeholder="Dpto. Fiscal | Apurar impostos\nDpto. Contábil | Fechamento">${esc(item ? flow.stepsToText(item.steps) : '')}</textarea><small>Setores usuais: ${SECTORS.join(', ')}. O nome precisa ser igual ao setor cadastrado no perfil dos colaboradores. Tarefas já criadas mantêm a sequência original.</small></div>
+        <ul class="tasks-templates">${templates.map(t => `<li><div><strong>${esc(t.name)}</strong>${t.active ? '' : ' <small>(inativo)</small>'}<small>${esc(t.steps.map(s => s.sector).join(' → '))}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-copy="${esc(t.id)}">Duplicar</button>${ctx().admin || t.created_by === ctx().userId ? `<button class="text-btn" type="button" data-edit="${esc(t.id)}">Editar</button>` : ''}</span></li>`).join('') || '<li><small>Nenhum modelo cadastrado.</small></li>'}</ul>
+        <form novalidate><h3>${item ? 'Editar modelo' : source ? 'Duplicar modelo: ' + esc(source.name) : 'Novo modelo'}</h3>
+        <div class="field"><label for="tmName">Nome da atividade</label><input id="tmName" maxlength="120" value="${esc(draft?.name || '')}"></div>
+        <div class="field"><label for="tmSteps">Etapas, uma por linha: setor | descrição opcional</label><textarea id="tmSteps" rows="5" placeholder="Dpto. Fiscal | Apurar impostos\nDpto. Contábil | Fechamento">${esc(draft ? flow.stepsToText(draft.steps) : '')}</textarea><small>Setores usuais: ${SECTORS.join(', ')}. O nome precisa ser igual ao setor cadastrado no perfil dos colaboradores. Tarefas já criadas mantêm a sequência original.</small></div>
         ${item ? `<label class="tasks-check"><input id="tmActive" type="checkbox" ${item.active ? 'checked' : ''}> Modelo ativo</label>` : ''}
         <p class="tasks-error" role="alert"></p>
-        <div class="modal-actions">${item ? '<button class="secondary" type="button" data-new>Novo modelo</button>' : ''}<button class="primary" type="submit">${item ? 'Salvar alterações' : 'Criar modelo'}</button></div></form>`;
+        <div class="modal-actions">${item || source ? '<button class="secondary" type="button" data-new>Novo modelo</button>' : ''}<button class="primary" type="submit">${item ? 'Salvar alterações' : 'Criar modelo'}</button></div></form>`;
       host.querySelector('[data-close]').onclick = () => d.close();
       host.querySelectorAll('[data-edit]').forEach(b => { b.onclick = () => paint(b.dataset.edit); });
+      host.querySelectorAll('[data-copy]').forEach(b => { b.onclick = () => { paint(null, b.dataset.copy); const input = host.querySelector('#tmName'); input.focus(); input.select(); }; });
       host.querySelector('[data-new]')?.addEventListener('click', () => paint(null));
       const error = host.querySelector('.tasks-error');
       host.querySelector('form').onsubmit = async event => {
@@ -196,7 +200,7 @@
           const api = client();
           if (item) check(await api.from('task_templates').update({ name, steps, active: host.querySelector('#tmActive').checked, updated_at: new Date().toISOString() }).eq('id', item.id));
           else check(await api.from('task_templates').insert({ name, steps }));
-          await load(); toast('Modelo salvo.'); paint(null);
+          await load(); toast(source ? 'Modelo duplicado.' : 'Modelo salvo.'); paint(null);
         });
       };
     };
