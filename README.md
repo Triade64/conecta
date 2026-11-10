@@ -36,6 +36,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 22. `supabase/tasks-completion-date.sql` (alterar a data de conclusão)
 23. `supabase/tasks-step-done-date.sql` (data de conclusão de cada etapa ao repassar)
 24. `supabase/chat-reactions-pins.sql` (reações e mensagens fixadas nas conversas)
+25. `supabase/chat-reactions-any-emoji.sql`
 
 ## Calendário do escritório
 

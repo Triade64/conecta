@@ -13,6 +13,11 @@
   const current = () => { try { return contacts[selectedContact] || null; } catch { return null; } };
   const box = () => document.getElementById('chatMessages');
   const REACTIONS = ['👍', '✅', '👀', '❤️', '😂', '🙏'];
+  const EMOJI_GROUPS = [
+    ["Rostos", [["😀","sorriso feliz"],["😄","riso feliz"],["😅","alivio suor"],["🤣","rolando rindo"],["😊","sorriso timido"],["😍","apaixonado amor"],["😘","beijo"],["😎","legal oculos"],["🤔","pensando duvida"],["🤨","desconfiado"],["😐","neutro"],["🙄","revirando olhos"],["😴","sono dormindo"],["😮","surpreso uau"],["😱","susto medo"],["😢","triste choro"],["😭","chorando"],["😡","bravo raiva"],["🤯","explodindo mente"],["🥳","festa comemoracao"],["😬","tenso constrangido"],["🤐","segredo boca fechada"],["🤗","abraco"],["🫡","continencia ok"],["🙃","de cabeca para baixo ironia"]]],
+    ["Gestos", [["👍","joinha positivo"],["👎","negativo"],["👏","palmas parabens"],["🙌","maos para cima viva"],["🙏","obrigado por favor"],["👌","ok perfeito"],["✌️","paz vitoria"],["🤞","dedos cruzados sorte"],["💪","forca"],["👋","ola tchau"],["🤝","acordo aperto de mao"],["👀","olhando vendo"],["🫶","coracao maos carinho"]]],
+    ["Símbolos", [["✅","feito concluido ok"],["☑️","marcado"],["❌","erro nao"],["⚠️","atencao alerta"],["❗","importante"],["❓","pergunta duvida"],["❤️","coracao amor"],["💙","coracao azul"],["💯","cem perfeito"],["🔥","fogo top"],["⭐","estrela"],["✨","brilho"],["🎉","festa parabens"],["🚀","foguete rapido"],["⏰","alarme prazo"],["⏳","aguardando tempo"],["📌","fixado"],["📎","anexo clipe"],["📄","documento"],["📊","grafico relatorio"],["💰","dinheiro"],["🧾","nota recibo"],["📅","calendario data"],["☕","cafe"],["🍕","pizza"]]]
+  ];
   const TASK_LINK = /#tarefa\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
   const dayKey = iso => iso ? new Intl.DateTimeFormat('sv-SE', { timeZone: 'America/Sao_Paulo' }).format(new Date(iso)) : '';
   const dayLabel = key => {
@@ -272,7 +277,39 @@
       b.addEventListener('click', e => { e.stopPropagation(); menu.hidden = true; void toggleReaction(message.id, emoji); });
       bar.append(b);
     }
+    const more = document.createElement("button"); more.type = "button"; more.textContent = "＋"; more.title = "Mais emojis"; more.className = "chat-react-more";
+    more.addEventListener("click", e => { e.stopPropagation(); menu.hidden = true; emojiPicker(more.closest(".message-row") || row, emoji => void toggleReaction(message.id, emoji)); });
+    bar.append(more);
     menu.prepend(bar);
+  }
+  function emojiPicker(anchor, onPick) {
+    document.querySelector(".chat-emoji-picker")?.remove();
+    const box = document.createElement("div"); box.className = "chat-emoji-picker";
+    box.innerHTML = "<input type=\"search\" placeholder=\"Buscar emoji…\" aria-label=\"Buscar emoji\">";
+    const grid = document.createElement("div"); grid.className = "chat-emoji-grid"; box.append(grid);
+    const paint = term => {
+      grid.innerHTML = "";
+      for (const [group, list] of EMOJI_GROUPS) {
+        const items = list.filter(([, words]) => !term || words.includes(term));
+        if (!items.length) continue;
+        const h = document.createElement("small"); h.textContent = group; grid.append(h);
+        for (const [emoji, words] of items) {
+          const b = document.createElement("button"); b.type = "button"; b.textContent = emoji; b.title = words.split(" ")[0];
+          b.onclick = e => { e.stopPropagation(); close(); onPick(emoji); }; grid.append(b);
+        }
+      }
+      if (!grid.children.length) grid.innerHTML = "<small>Nenhum emoji encontrado.</small>";
+    };
+    const input = box.querySelector("input");
+    input.oninput = () => paint(input.value.trim().toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, ""));
+    const close = () => { box.remove(); document.removeEventListener("mousedown", outside, true); document.removeEventListener("keydown", esc, true); };
+    const outside = e => { if (!box.contains(e.target)) close(); };
+    const esc = e => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
+    document.body.append(box); paint("");
+    const r = anchor.getBoundingClientRect(), w = box.offsetWidth, h = box.offsetHeight;
+    box.style.left = Math.max(8, Math.min(innerWidth - w - 8, r.right - w)) + "px";
+    box.style.top = Math.max(8, Math.min(innerHeight - h - 8, r.top - h - 6 < 8 ? r.bottom + 6 : r.top - h - 6)) + "px";
+    setTimeout(() => { document.addEventListener("mousedown", outside, true); document.addEventListener("keydown", esc, true); input.focus(); });
   }
   function paintReactions(row, message) {
     const stack = row.querySelector('.message-stack'); if (!stack) return;

@@ -59,3 +59,10 @@ html[data-theme="dark"] .chat-mention{color:#9cc3ff;background:rgba(96,165,250,.
 html[data-theme="dark"] .chat-mention.me{color:#f1bd8e;background:rgba(241,189,142,.18)}
 html[data-theme="dark"] .chat-thread-link{color:#9cc3ff}
 html[data-theme="dark"] .chat-side-panel header strong{color:var(--ink)}
+.message-action-menu .chat-react-row button.chat-react-more{font-size:14px;font-weight:700;color:var(--muted,#727b8b)}
+.chat-emoji-picker{position:fixed;z-index:1000;width:300px;max-width:calc(100vw - 16px);background:var(--dark-surface,#fff);color:var(--ink,#263342);border:1px solid var(--line,#e3e6ec);border-radius:12px;box-shadow:0 10px 28px rgba(0,0,0,.2);padding:8px;display:flex;flex-direction:column;gap:6px}
+.chat-emoji-picker input{width:100%;box-sizing:border-box;font:inherit;font-size:13px;padding:6px 8px;border:1px solid var(--line,#e3e6ec);border-radius:8px;background:transparent;color:inherit}
+.chat-emoji-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:2px;max-height:240px;overflow:auto}
+.chat-emoji-grid small{grid-column:1/-1;font-size:10px;color:var(--muted,#727b8b);padding:4px 2px 0}
+.chat-emoji-grid button{font-size:20px;line-height:1;border:0;background:none;border-radius:6px;padding:5px 0;cursor:pointer}
+.chat-emoji-grid button:hover{background:rgba(59,130,246,.15)}
