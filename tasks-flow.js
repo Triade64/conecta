@@ -22,7 +22,9 @@
       advance: turn,
       return: turn && task.current_step > 0,
       cancel: open && (task.created_by === ctx.userId || !!ctx.admin),
-      comment: true
+      comment: true,
+      claim: turn && task.assigned_to !== ctx.userId,
+      release: open && !!task.assigned_to && (task.assigned_to === ctx.userId || !!ctx.admin)
     };
   };
   const dueState = (task, today) => {
@@ -59,6 +61,22 @@
       (weight[a.priority] - weight[b.priority]) ||
       String(b.updated_at).localeCompare(String(a.updated_at)));
   };
+  // Tarefas que acabaram de chegar à vez do setor do usuário, por ação de outra pessoa
+  // (ou da recorrência automática). prev = lista anterior; null na primeira carga.
+  const arrivals = (prev, next, ctx) => {
+    if (!prev) return [];
+    const before = new Map(prev.map(t => [t.id, t]));
+    return next.filter(t => {
+      if (!isMyTurn(t, ctx) || (t.updated_by && t.updated_by === ctx.userId)) return false;
+      const old = before.get(t.id);
+      return !old || !isMyTurn(old, ctx);
+    });
+  };
+  // Resumo para o painel: caixa do setor, atrasadas e que vencem hoje.
+  const summary = (tasks, ctx, today) => {
+    const inbox = tasks.filter(t => isMyTurn(t, ctx));
+    return { inbox: inbox.length, late: inbox.filter(t => dueState(t, today) === 'late').length, today: inbox.filter(t => dueState(t, today) === 'today').length, mine: inbox.filter(t => t.assigned_to === ctx.userId).length };
+  };
   const inboxCount = (tasks, ctx) => tasks.filter(task => isMyTurn(task, ctx)).length;
   // Normaliza a lista digitada no editor de modelos: "Setor | descrição opcional", um por linha.
   const parseSteps = text => String(text || '').split('\n').map(line => line.trim()).filter(Boolean).map(line => {
@@ -75,15 +93,18 @@
     task_first_step: 'A tarefa já está na primeira etapa.',
     task_note_required: 'Informe um motivo ou texto.',
     task_template_unavailable: 'O modelo de fluxo não está disponível.',
-    task_client_unavailable: 'O cliente não está disponível.'
+    task_client_unavailable: 'O cliente não está disponível.',
+    task_not_assigned: 'Esta tarefa não tem responsável.',
+    task_already_yours: 'Você já é o responsável por esta tarefa.'
   };
   const errorMessage = error => {
+    if (error?.userMessage) return error.userMessage;
     const text = String(error?.message || '');
     const code = Object.keys(ERRORS).find(key => text.includes(key));
     if (code) return ERRORS[code];
     if (/duplicate key|unique/i.test(text)) return 'Já existe um registro com esse nome.';
     return 'Não foi possível concluir a ação. Tente novamente.';
   };
-  const api = { SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
+  const api = { arrivals, summary, SECTORS, canonicalSector, sectorKey, currentStep, progress, isOpen, isMyTurn, can, dueState, filterTasks, inboxCount, parseSteps, stepsToText, errorMessage, VIEWS };
   if (typeof module === 'object' && module.exports) module.exports = api; else root.conectaTasksFlow = api;
 })(globalThis);

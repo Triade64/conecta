@@ -149,5 +149,65 @@ begin
   if (select status from public.tasks where id=t)<>'cancelled' then raise exception 'FAIL: não cancelou'; end if;
 end $$;
 
+-- Responsável: só o setor da vez assume; mudar de etapa libera o responsável.
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
+do $$
+declare t uuid; v integer;
+begin
+  t := public.task_create(current_setting('tfx.client_id')::uuid,current_setting('tfx.template_id')::uuid,'Tarefa com responsável','','normal',null);
+  perform set_config('task_fx.id3', t::text, true);
+  if (select updated_by from public.tasks where id=t) <> current_setting('tfx.atend_id')::uuid then raise exception 'FAIL: updated_by não registrado'; end if;
+  select version into v from public.tasks where id=t; perform public.task_advance(t,v,'');
+end $$;
+select set_config('request.jwt.claim.sub',current_setting('tfx.contab_id'),true);
+do $$
+declare t uuid := current_setting('task_fx.id3')::uuid; v integer;
+begin
+  select version into v from public.tasks where id=t;
+  begin perform public.task_claim(t,v,false); raise exception 'FAIL: setor errado assumiu';
+  exception when others then if sqlerrm like 'FAIL:%' or sqlerrm <> 'task_wrong_sector' then raise; end if; end;
+end $$;
+select set_config('request.jwt.claim.sub',current_setting('tfx.fiscal_id'),true);
+do $$
+declare t uuid := current_setting('task_fx.id3')::uuid; v integer;
+begin
+  select version into v from public.tasks where id=t;
+  perform public.task_claim(t,v,false);
+  if (select assigned_to from public.tasks where id=t) <> current_setting('tfx.fiscal_id')::uuid then raise exception 'FAIL: não assumiu'; end if;
+  select version into v from public.tasks where id=t;
+  begin perform public.task_claim(t,v,false); raise exception 'FAIL: assumiu duas vezes';
+  exception when others then if sqlerrm like 'FAIL:%' or sqlerrm <> 'task_already_yours' then raise; end if; end;
+  perform public.task_advance(t,v,'');
+  if (select assigned_to from public.tasks where id=t) is not null then raise exception 'FAIL: responsável não foi liberado ao repassar'; end if;
+  if not exists (select 1 from public.task_events where task_id=t and kind='claimed') then raise exception 'FAIL: histórico sem "assumida"'; end if;
+end $$;
+
+-- Recorrência: o colaborador cria a sua, outro não enxerga; a rotina gera uma vez por mês.
+select set_config('request.jwt.claim.sub',current_setting('tfx.atend_id'),true);
+insert into public.task_recurrences(client_id,template_id,title,day_of_month,due_days)
+values (current_setting('tfx.client_id')::uuid,current_setting('tfx.template_id')::uuid,'Fechamento {mes}',1,3);
+select set_config('request.jwt.claim.sub',current_setting('tfx.outsider_id'),true);
+do $$ begin
+  if exists (select 1 from public.task_recurrences where title='Fechamento {mes}') then raise exception 'FAIL: outro colaborador vê a recorrência'; end if;
+end $$;
+reset role;
+update public.task_recurrences set last_period = null where title='Fechamento {mes}' and created_by=current_setting('tfx.atend_id')::uuid;
+do $$
+declare n integer; expected text := 'Fechamento ' || to_char(private.office_today(),'MM/YYYY');
+begin
+  n := private.task_run_recurrences();
+  if n < 1 or not exists (select 1 from public.tasks where title=expected and created_by=current_setting('tfx.atend_id')::uuid) then
+    raise exception 'FAIL: recorrência não gerou a tarefa (%)', expected;
+  end if;
+  if (select due_date from public.tasks where title=expected and created_by=current_setting('tfx.atend_id')::uuid limit 1)
+     <> make_date(extract(year from private.office_today())::int, extract(month from private.office_today())::int, 1) + 3 then
+    raise exception 'FAIL: prazo da recorrência incorreto';
+  end if;
+  perform private.task_run_recurrences();
+  if (select count(*) from public.tasks where title=expected and created_by=current_setting('tfx.atend_id')::uuid) <> 1 then
+    raise exception 'FAIL: recorrência gerou duas vezes no mesmo mês';
+  end if;
+end $$;
+
 select 'tasks.rls: todas as verificações passaram' as result;
 rollback;

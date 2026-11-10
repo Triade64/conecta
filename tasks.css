@@ -45,3 +45,16 @@ html[data-theme="dark"] .tasks-pill.due-today{background:#4a3a1c;color:#f1bd8e;b
 html[data-theme="dark"] .tasks-error{color:#ffaca4!important}html[data-theme="dark"] .tasks-actions .danger{color:#ffaca4}
 html[data-theme="dark"] .tasks-tabs button[aria-selected="true"]{color:#d9d4ff}
 @media (max-width:640px){.tasks-item{flex-direction:column;align-items:flex-start}.tasks-item-side{justify-content:flex-start}.tasks-inline{flex-direction:column;align-items:stretch}}
+.tasks-assignee{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-size:12px;margin:0 0 8px;padding:8px 10px;border:1px dashed var(--line);border-radius:10px}
+.tasks-assignee>span{flex:1;min-width:160px}
+.task-summary{flex:none;padding:10px 14px;display:grid;gap:6px}
+.task-summary[hidden]{display:none}
+.task-summary-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px}
+.task-summary-head .text-btn{margin-left:auto;font-size:12px}
+.task-summary-list{list-style:none;margin:0;padding:0;display:flex;gap:8px;flex-wrap:wrap}
+.task-summary-list button{border:1px solid var(--line);background:var(--bg);color:var(--ink);border-radius:10px;padding:5px 10px;font:inherit;font-size:12px;cursor:pointer;max-width:340px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.task-summary-list small{color:var(--muted)}.task-summary-list small.due-late{color:#b42318}.task-summary-list small.due-today{color:#9a5a00}
+.task-summary-empty{margin:0;font-size:12px;color:var(--muted)}
+html[data-theme="dark"] .task-summary-list button{background:transparent}
+html[data-theme="dark"] .task-summary-list small.due-late{color:#ffaca4}html[data-theme="dark"] .task-summary-list small.due-today{color:#f1bd8e}
+@media(max-height:720px){.task-summary{padding:6px 12px;gap:4px}.task-summary-list{display:none}}

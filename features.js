@@ -28,6 +28,7 @@
       return false;
     }
   };
+  window.conectaShowNotification = showBrowserNotification;
   const setProfileAvatar = (element, url, label = "") => {
     if (!element) return;
     element.setAttribute("aria-label", label || "Foto do perfil");

@@ -11,9 +11,9 @@
   const PRIORITY = { alta: 'Alta', normal: 'Normal', baixa: 'Baixa' };
   const STATUS = { open: 'Aberta', done: 'Concluída', cancelled: 'Cancelada' };
   const VIEW_LABEL = { inbox: 'Minha caixa', sector: 'Do meu setor', sent: 'Enviadas por mim', all: 'Todas' };
-  const EVENT_LABEL = { created: 'Tarefa criada', advanced: 'Repassada', returned: 'Devolvida', completed: 'Concluída', cancelled: 'Cancelada', comment: 'Comentário' };
+  const EVENT_LABEL = { created: 'Tarefa criada', advanced: 'Repassada', returned: 'Devolvida', completed: 'Concluída', cancelled: 'Cancelada', comment: 'Comentário', claimed: 'Assumida', released: 'Responsável liberado' };
 
-  let tasks = [], clients = [], templates = [], ready = false, channel = null, timer = null, lastLoad = 0, generation = 0;
+  let tasks = [], clients = [], templates = [], recurrences = [], ready = false, channel = null, timer = null, lastLoad = 0, generation = 0;
   let detail = null, detailEvents = [];
   const filters = { view: 'inbox', status: 'open', term: '', priority: '', sector: '', onlyLate: false };
   const client = () => window.conectaTasksApi?.client();
@@ -29,19 +29,22 @@
   nav.type = 'button'; nav.dataset.view = 'Tarefas';
   nav.innerHTML = '<span class="ico" aria-hidden="true">☑</span> Tarefas <span class="count" id="taskNavCount">0</span>';
   (document.querySelector('.nav [data-view="Lembretes"]') || document.querySelector('.nav button:last-child'))?.after(nav);
-  const paintNav = () => { const el = document.getElementById('taskNavCount'); if (el) el.textContent = String(ready ? flow.inboxCount(tasks, ctx()) : 0); };
+  const paintNav = () => { const el = document.getElementById('taskNavCount'); if (el) el.textContent = String(ready ? flow.inboxCount(tasks, ctx()) : 0); paintSummary(); };
 
   async function load() {
     const api = client(); if (!api || !window.conectaCurrentUser) return;
     const mine = ++generation;
-    const [t, c, m] = await Promise.all([
+    const [t, c, m, r] = await Promise.all([
       api.from('tasks').select('*').order('updated_at', { ascending: false }).limit(500),
       api.from('task_clients').select('id,name,document,active').order('name'),
-      api.from('task_templates').select('id,name,steps,active,created_by').order('name')
+      api.from('task_templates').select('id,name,steps,active,created_by').order('name'),
+      api.from('task_recurrences').select('*').order('day_of_month')
     ]);
     if (mine !== generation) return;
     if (t.error || c.error || m.error) { console.warn('Tarefas: falha ao carregar', t.error || c.error || m.error); return; }
-    tasks = t.data; clients = c.data; templates = m.data; ready = true; lastLoad = Date.now();
+    const previous = ready ? tasks : null;
+    tasks = t.data; clients = c.data; templates = m.data; recurrences = r.error ? [] : r.data; ready = true; lastLoad = Date.now();
+    notifyArrivals(flow.arrivals(previous, tasks, ctx()));
     if (detail) { detail = tasks.find(x => x.id === detail.id) || null; if (!detail) closeDetail(); }
     paintNav(); if (visible()) paintList();
     if (detail) paintDetail();
@@ -50,7 +53,7 @@
   function start() {
     stop(); const api = client(); if (!api) return;
     channel = api.channel('tasks-live');
-    for (const table of ['tasks', 'task_clients', 'task_templates']) channel.on('postgres_changes', { event: '*', schema: 'public', table }, schedule);
+    for (const table of ['tasks', 'task_clients', 'task_templates', 'task_recurrences']) channel.on('postgres_changes', { event: '*', schema: 'public', table }, schedule);
     channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'task_events' }, payload => {
       if (detail && payload.new?.task_id === detail.id) void loadEvents();
     });
@@ -61,7 +64,54 @@
     clearTimeout(timer); generation++;
     if (channel) { client()?.removeChannel(channel); channel = null; }
   }
-  function reset() { stop(); tasks = []; clients = []; templates = []; ready = false; detail = null; detailEvents = []; closeDialogs(); paintNav(); if (visible()) paintList(); }
+  function reset() { stop(); tasks = []; clients = []; templates = []; recurrences = []; ready = false; detail = null; detailEvents = []; closeDialogs(); paintNav(); if (visible()) paintList(); }
+
+  // ---------- avisos de chegada ----------
+  function notifyArrivals(list) {
+    if (!list.length) return;
+    const map = clientsById(), c = ctx();
+    const label = t => (map.get(t.client_id)?.name || 'Cliente') + ' · ' + t.title;
+    const body = list.length === 1 ? label(list[0]) : list.length + ' tarefas chegaram para ' + (c.sector || 'o seu setor') + '.';
+    const onClick = list.length === 1 ? () => openTaskFromOutside(list[0].id) : () => nav.click();
+    const shown = window.conectaShowNotification?.('Nova tarefa para o seu setor', body, 'task-' + list[0].id + '-' + list[0].version, false, onClick);
+    if (!shown && document.visibilityState === 'visible') toast('Nova tarefa para o seu setor: ' + body);
+  }
+  function openTaskFromOutside(id) { nav.click(); openDetail(id); }
+
+  // ---------- resumo na Visão geral ----------
+  function paintSummary() {
+    const stats = document.querySelector('.content>.stats'); if (!stats) return;
+    let card = document.getElementById('taskSummary');
+    if (!card) {
+      card = document.createElement('section'); card.id = 'taskSummary'; card.className = 'card task-summary';
+      stats.after(card);
+      const sync = () => { card.hidden = stats.style.display === 'none'; };
+      new MutationObserver(sync).observe(stats, { attributes: true, attributeFilter: ['style'] }); sync();
+    }
+    const c = ctx(), t = today();
+    let html;
+    if (!ready || !c.userId) html = '<div class="task-summary-head"><strong>Tarefas do seu setor</strong><span>Carregando…</span></div>';
+    else {
+      const s = flow.summary(tasks, c, t), map = clientsById();
+      const next = flow.filterTasks(tasks, { view: 'inbox', status: 'open' }, c, map, t).slice(0, 3);
+      const pills = [`<span class="tasks-pill">${s.inbox} na caixa</span>`];
+      if (s.late) pills.push(`<span class="tasks-pill due-late">${s.late} atrasada${s.late > 1 ? 's' : ''}</span>`);
+      if (s.today) pills.push(`<span class="tasks-pill due-today">${s.today} vence${s.today > 1 ? 'm' : ''} hoje</span>`);
+      if (s.mine) pills.push(`<span class="tasks-pill">${s.mine} comigo</span>`);
+      const items = next.map(x => {
+        const late = flow.dueState(x, t);
+        return `<li><button type="button" data-summary-task="${esc(x.id)}"><strong>${esc(map.get(x.client_id)?.name || 'Cliente')}</strong> ${esc(x.title)}${x.due_date ? ` <small class="due-${late}">${fmtDate(x.due_date)}</small>` : ''}</button></li>`;
+      }).join('');
+      html = `<div class="task-summary-head"><strong>Tarefas do seu setor</strong>${pills.join('')}<button class="text-btn" type="button" data-summary-open>Ver tarefas →</button></div>`
+        + (items ? `<ul class="task-summary-list">${items}</ul>` : '<p class="task-summary-empty">Nenhuma tarefa aguardando o seu setor.</p>');
+    }
+    if (card.innerHTML !== html) {
+      card.innerHTML = html;
+      card.querySelector('[data-summary-open]')?.addEventListener('click', () => nav.click());
+      card.querySelectorAll('[data-summary-task]').forEach(b => { b.onclick = () => openTaskFromOutside(b.dataset.summaryTask); });
+    }
+  }
+  setInterval(() => { if (ready) paintSummary(); }, 60_000);
 
   // ---------- diálogos ----------
   let dialogs = [];
@@ -112,8 +162,8 @@
           if (existing) clientId = existing.id;
           else { const row = check(await api.from('task_clients').insert({ name: newName, document: $('ntClientDoc').value.trim() || null }).select('id,name,document,active').single()); clients.push(row); clientId = row.id; }
         }
-        if (!clientId) throw { message: 'Selecione ou cadastre o cliente.' };
-        if ($('ntTitle').value.trim().length < 3) throw { message: 'Informe um título com pelo menos 3 caracteres.' };
+        if (!clientId) throw { userMessage: 'Selecione ou cadastre o cliente.' };
+        if ($('ntTitle').value.trim().length < 3) throw { userMessage: 'Informe um título com pelo menos 3 caracteres.' };
         check(await api.rpc('task_create', { p_client: clientId, p_template: $('ntTemplate').value, p_title: $('ntTitle').value, p_description: $('ntDesc').value, p_priority: $('ntPriority').value, p_due: $('ntDue').value || null }));
         d.close(); toast('Tarefa criada.'); await load();
       });
@@ -144,6 +194,7 @@
     const typed = host.querySelector('#tdNote')?.value || '';
     host.innerHTML = `<div class="tasks-head"><div><h2>${esc(task.title)}</h2><p>${esc(cl?.name || 'Cliente')} · ${esc(task.template_name)}</p></div><button class="text-btn" type="button" data-close-detail aria-label="Fechar">✕</button></div>
       <div class="tasks-meta"><span class="tasks-pill status-${esc(task.status)}">${STATUS[task.status]}</span><span class="tasks-pill prio-${esc(task.priority)}">Prioridade ${PRIORITY[task.priority]}</span>${task.due_date ? `<span class="tasks-pill due-${late}">Prazo ${fmtDate(task.due_date)}${late === 'late' ? ' · atrasada' : late === 'today' ? ' · hoje' : ''}</span>` : ''}</div>
+      ${task.status === 'open' ? `<div class="tasks-assignee"><span>${task.assigned_to ? `Responsável: <strong>${esc(task.assigned_name || 'Colaborador')}</strong>` : `Sem responsável no ${esc(p.sector)}`}</span>${allow.claim ? `<button class="secondary" type="button" data-act="claim">${task.assigned_to ? 'Assumir no lugar' : 'Assumir'}</button>` : ''}${allow.release ? '<button class="text-btn" type="button" data-act="release">Liberar</button>' : ''}</div>` : ''}
       ${task.description ? `<p class="tasks-desc">${esc(task.description)}</p>` : ''}
       <ol class="tasks-track">${stepTrack(task)}</ol>
       <h3>Histórico</h3><ul class="tasks-events">${detailEvents.map(e => `<li class="ev-${esc(e.kind)}"><strong>${EVENT_LABEL[e.kind]}</strong>${e.kind === 'advanced' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : e.kind === 'returned' ? ` → ${esc(task.steps[e.to_step]?.sector || '')}` : ''}<small>${esc(e.actor_name || 'Colaborador')} · ${fmtTime(e.created_at)}</small>${e.note ? `<p>${esc(e.note)}</p>` : ''}</li>`).join('') || '<li><small>Carregando…</small></li>'}</ul>
@@ -159,6 +210,7 @@
         const note = host.querySelector('#tdNote').value, api = client(), v = task.version;
         const act = button.dataset.act;
         if (act === 'comment') check(await api.rpc('task_comment', { p_task: task.id, p_note: note }));
+        if (act === 'claim' || act === 'release') check(await api.rpc('task_claim', { p_task: task.id, p_version: v, p_release: act === 'release' }));
         if (act === 'advance') check(await api.rpc('task_advance', { p_task: task.id, p_version: v, p_note: note }));
         if (act === 'return') check(await api.rpc('task_return', { p_task: task.id, p_version: v, p_note: note }));
         if (act === 'cancel' && !confirm('Cancelar esta tarefa? A ação não pode ser desfeita.')) return;
@@ -200,9 +252,9 @@
         event.preventDefault();
         await guarded(host.querySelector('[type=submit]'), error, async () => {
           const all = [...rows.children].map(li => ({ sector: li.querySelector('[data-step-sector]').value, label: li.querySelector('[data-step-label]').value.trim() })), steps = all.filter(st => st.sector), name = host.querySelector('#tmName').value.trim();
-          if (name.length < 2) throw { message: 'Informe o nome do modelo.' };
-          if (all.some(st => !st.sector && st.label)) throw { message: 'Escolha o setor de todas as etapas com descrição.' };
-          if (!steps.length) throw { message: 'Informe ao menos uma etapa.' };
+          if (name.length < 2) throw { userMessage: 'Informe o nome do modelo.' };
+          if (all.some(st => !st.sector && st.label)) throw { userMessage: 'Escolha o setor de todas as etapas com descrição.' };
+          if (!steps.length) throw { userMessage: 'Informe ao menos uma etapa.' };
           const api = client();
           if (item) check(await api.from('task_templates').update({ name, steps, active: host.querySelector('#tmActive').checked, updated_at: new Date().toISOString() }).eq('id', item.id));
           else check(await api.from('task_templates').insert({ name, steps }));
@@ -213,11 +265,62 @@
     paint(null);
   }
 
+  function recurrencesDialog() {
+    const d = openDialog('<div class="tasks-detail"></div>', true);
+    const paint = editing => {
+      const host = d.querySelector('.tasks-detail'), map = clientsById();
+      const item = editing && recurrences.find(r => r.id === editing);
+      const activeTemplates = templates.filter(t => t.active || t.id === item?.template_id);
+      const activeClients = clients.filter(c => c.active || c.id === item?.client_id);
+      const opt = (list, selected) => list.map(x => `<option value="${esc(x.id)}"${x.id === selected ? ' selected' : ''}>${esc(x.name)}</option>`).join('');
+      const tplName = id => templates.find(t => t.id === id)?.name || 'Modelo removido';
+      host.innerHTML = `<div class="tasks-head"><div><h2>Tarefas recorrentes</h2><p>Criadas automaticamente todo mês, às 6h do dia escolhido.</p></div><button class="text-btn" type="button" data-close aria-label="Fechar">✕</button></div>
+        <ul class="tasks-templates">${recurrences.map(r => `<li><div><strong>${esc(map.get(r.client_id)?.name || 'Cliente')} · ${esc(r.title)}</strong>${r.active ? '' : ' <small>(pausada)</small>'}<small>${esc(tplName(r.template_id))} · todo dia ${r.day_of_month} · prazo de ${r.due_days} dia${r.due_days === 1 ? '' : 's'}${r.last_period ? ' · última: ' + esc(r.last_period.split('-').reverse().join('/')) : ''}</small></div><span class="tasks-template-actions"><button class="text-btn" type="button" data-edit="${esc(r.id)}">Editar</button></span></li>`).join('') || '<li><small>Nenhuma recorrência cadastrada por você.</small></li>'}</ul>
+        <form novalidate><h3>${item ? 'Editar recorrência' : 'Nova recorrência'}</h3>
+        <div class="tasks-inline"><div class="field"><label for="rcClient">Cliente</label><select id="rcClient"><option value="">Selecione…</option>${opt(activeClients, item?.client_id)}</select></div>
+        <div class="field"><label for="rcTemplate">Fluxo</label><select id="rcTemplate"><option value="">Selecione…</option>${opt(activeTemplates, item?.template_id)}</select></div></div>
+        <div class="field"><label for="rcTitle">Título</label><input id="rcTitle" maxlength="160" placeholder="Ex.: Fechamento {mes}" value="${esc(item?.title || '')}"><small>Use {mes} para incluir o mês, por exemplo "Fechamento {mes}" vira "Fechamento 11/2026".</small></div>
+        <div class="field"><label for="rcDesc">Descrição (opcional)</label><textarea id="rcDesc" rows="2" maxlength="4000">${esc(item?.description || '')}</textarea></div>
+        <div class="tasks-inline"><div class="field"><label for="rcDay">Criar no dia</label><input id="rcDay" type="number" min="1" max="28" value="${item?.day_of_month || 1}"></div>
+        <div class="field"><label for="rcDue">Prazo (dias depois)</label><input id="rcDue" type="number" min="0" max="60" value="${item?.due_days ?? 5}"></div>
+        <div class="field"><label for="rcPriority">Prioridade</label><select id="rcPriority">${Object.entries(PRIORITY).map(([k, v]) => `<option value="${k}"${(item?.priority || 'normal') === k ? ' selected' : ''}>${v}</option>`).join('')}</select></div></div>
+        ${item ? `<label class="tasks-check"><input id="rcActive" type="checkbox" ${item.active ? 'checked' : ''}> Recorrência ativa</label>` : '<small>Se o dia escolhido já passou neste mês, a primeira tarefa sai no próximo mês.</small>'}
+        <p class="tasks-error" role="alert"></p>
+        <div class="modal-actions">${item ? '<button class="secondary danger" type="button" data-delete>Excluir</button><button class="secondary" type="button" data-new>Nova recorrência</button>' : ''}<button class="primary" type="submit">${item ? 'Salvar alterações' : 'Criar recorrência'}</button></div></form>`;
+      host.querySelector('[data-close]').onclick = () => d.close();
+      host.querySelectorAll('[data-edit]').forEach(b => { b.onclick = () => paint(b.dataset.edit); });
+      host.querySelector('[data-new]')?.addEventListener('click', () => paint(null));
+      const error = host.querySelector('.tasks-error'), $ = id => host.querySelector('#' + id);
+      host.querySelector('[data-delete]')?.addEventListener('click', event => void guarded(event.currentTarget, error, async () => {
+        if (!confirm('Excluir esta recorrência? As tarefas já criadas continuam.')) return;
+        check(await client().from('task_recurrences').delete().eq('id', item.id));
+        await load(); toast('Recorrência excluída.'); paint(null);
+      }));
+      host.querySelector('form').onsubmit = async event => {
+        event.preventDefault();
+        await guarded(host.querySelector('[type=submit]'), error, async () => {
+          const day = Number($('rcDay').value), due = Number($('rcDue').value);
+          const row = { client_id: $('rcClient').value, template_id: $('rcTemplate').value, title: $('rcTitle').value.trim(), description: $('rcDesc').value, priority: $('rcPriority').value, day_of_month: day, due_days: due };
+          if (!row.client_id) throw { userMessage: 'Selecione o cliente.' };
+          if (!row.template_id) throw { userMessage: 'Selecione o fluxo.' };
+          if (row.title.length < 3) throw { userMessage: 'Informe um título com pelo menos 3 caracteres.' };
+          if (!Number.isInteger(day) || day < 1 || day > 28) throw { userMessage: 'O dia precisa estar entre 1 e 28.' };
+          if (!Number.isInteger(due) || due < 0 || due > 60) throw { userMessage: 'O prazo precisa estar entre 0 e 60 dias.' };
+          const api = client();
+          if (item) check(await api.from('task_recurrences').update({ ...row, active: $('rcActive').checked }).eq('id', item.id));
+          else check(await api.from('task_recurrences').insert(row));
+          await load(); toast('Recorrência salva.'); paint(null);
+        });
+      };
+    };
+    paint(null);
+  }
+
   // ---------- lista ----------
   function renderTasks() {
     const c = ctx(), views = flow.VIEWS.filter(v => v !== 'all' || c.admin);
     if (!views.includes(filters.view)) filters.view = 'inbox';
-    document.getElementById('viewPanel').innerHTML = `<div class="view-toolbar"><div><h2>Tarefas entre setores</h2><p>Acompanhe o fluxo de cada cliente, de etapa em etapa.</p></div><div class="tasks-toolbar-actions"><button class="secondary" type="button" id="taskTemplatesBtn">Modelos de fluxo</button><button class="primary" type="button" id="taskNewBtn">+ Nova tarefa</button></div></div>
+    document.getElementById('viewPanel').innerHTML = `<div class="view-toolbar"><div><h2>Tarefas entre setores</h2><p>Acompanhe o fluxo de cada cliente, de etapa em etapa.</p></div><div class="tasks-toolbar-actions"><button class="secondary" type="button" id="taskTemplatesBtn">Modelos de fluxo</button><button class="secondary" type="button" id="taskRecurBtn">Recorrências</button><button class="primary" type="button" id="taskNewBtn">+ Nova tarefa</button></div></div>
       <div class="tasks-tabs" role="tablist">${views.map(v => `<button type="button" role="tab" data-tview="${v}" aria-selected="${filters.view === v}">${VIEW_LABEL[v]} <span class="count" data-tcount="${v}"></span></button>`).join('')}</div>
       <div class="tasks-filters"><div class="field"><label for="tfTerm">Pesquisar</label><input id="tfTerm" type="search" placeholder="Cliente, título ou fluxo" value="${esc(filters.term)}"></div>
       <div class="field"><label for="tfStatus">Situação</label><select id="tfStatus"><option value="">Todas</option>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}">${v}</option>`).join('')}</select></div>
@@ -227,7 +330,7 @@
       <div class="tasks-list" id="taskList" aria-live="polite"></div>`;
     const $ = id => document.getElementById(id);
     $('tfStatus').value = filters.status; $('tfSector').value = filters.sector; $('tfPriority').value = filters.priority; $('tfLate').checked = filters.onlyLate;
-    $('taskNewBtn').onclick = newTaskDialog; $('taskTemplatesBtn') && ($('taskTemplatesBtn').onclick = templatesDialog);
+    $('taskNewBtn').onclick = newTaskDialog; $('taskRecurBtn').onclick = recurrencesDialog;$('taskTemplatesBtn') && ($('taskTemplatesBtn').onclick = templatesDialog);
     document.querySelectorAll('[data-tview]').forEach(b => { b.onclick = () => { filters.view = b.dataset.tview; document.querySelectorAll('[data-tview]').forEach(x => x.setAttribute('aria-selected', String(x === b))); paintList(); }; });
     const bind = (id, key, prop = 'value') => { $(id).oninput = $(id).onchange = () => { filters[key] = $(id)[prop]; paintList(); }; };
     bind('tfTerm', 'term'); bind('tfStatus', 'status'); bind('tfSector', 'sector'); bind('tfPriority', 'priority'); bind('tfLate', 'onlyLate', 'checked');
@@ -244,7 +347,7 @@
     if (!rows.length) { host.innerHTML = `<div class="empty">${tasks.length ? 'Nenhuma tarefa encontrada com estes filtros.' : 'Nenhuma tarefa ainda. Use “+ Nova tarefa” para iniciar um fluxo.'}</div>`; return; }
     host.innerHTML = rows.map(task => {
       const p = flow.progress(task), late = flow.dueState(task, t), mine = flow.isMyTurn(task, c);
-      return `<button type="button" class="card tasks-item${mine ? ' mine' : ''}" data-task="${esc(task.id)}"><div class="tasks-item-main"><strong>${esc(map.get(task.client_id)?.name || 'Cliente')}</strong><span>${esc(task.title)}</span><small>${esc(task.template_name)}</small></div>
+      return `<button type="button" class="card tasks-item${mine ? ' mine' : ''}" data-task="${esc(task.id)}"><div class="tasks-item-main"><strong>${esc(map.get(task.client_id)?.name || 'Cliente')}</strong><span>${esc(task.title)}</span><small>${esc(task.template_name)}${task.status === 'open' && task.assigned_to ? ` · com ${esc(task.assigned_name || 'colaborador')}` : ''}</small></div>
         <div class="tasks-item-side"><span class="tasks-pill status-${esc(task.status)}">${task.status === 'open' ? `Etapa ${p.index + 1}/${p.total} · ${esc(p.sector)}` : STATUS[task.status]}</span>${task.priority === 'alta' && flow.isOpen(task) ? '<span class="tasks-pill prio-alta">Alta</span>' : ''}${task.due_date && flow.isOpen(task) ? `<span class="tasks-pill due-${late}">${fmtDate(task.due_date)}${late === 'late' ? ' · atrasada' : ''}</span>` : ''}</div></button>`;
     }).join('');
     host.querySelectorAll('[data-task]').forEach(b => { b.onclick = () => openDetail(b.dataset.task); });

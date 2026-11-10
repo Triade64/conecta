@@ -107,3 +107,43 @@ test('canonicalSector converte variações para o nome oficial e preserva os dem
   assert.equal(flow.canonicalSector('Administração'), 'Administrador');
   assert.equal(flow.canonicalSector(' Atendimento '), 'Atendimento');
 });
+
+test('assumir: setor da vez ou admin; liberar: responsável ou admin', () => {
+  const ctxF = { userId: 'u-fiscal', sector: 'Dpto. Fiscal', admin: false };
+  const t = mk({ current_step: 1 });
+  assert.equal(flow.can(t, ctxF).claim, true);
+  assert.equal(flow.can(t, atend).claim, false);
+  const mineTask = mk({ current_step: 1, assigned_to: 'u-fiscal' });
+  assert.equal(flow.can(mineTask, ctxF).claim, false);
+  assert.equal(flow.can(mineTask, ctxF).release, true);
+  assert.equal(flow.can(mk({ current_step: 1, assigned_to: 'outro' }), ctxF).release, false);
+  assert.equal(flow.can(mk({ current_step: 1, assigned_to: 'outro' }), admin).release, true);
+  assert.equal(flow.can(mk({ assigned_to: 'u-atend', status: 'done' }), atend).release, false);
+});
+
+test('arrivals: avisa só quando a tarefa chega ao setor por outra pessoa', () => {
+  const ctxF = { userId: 'u-fiscal', sector: 'Fiscal', admin: false };
+  const before = [mk({ id: 'a' }), mk({ id: 'b', current_step: 1 })];
+  const after = [
+    mk({ id: 'a', current_step: 1, updated_by: 'u-atend' }),
+    mk({ id: 'b', current_step: 1, updated_by: 'u-atend' }),
+    mk({ id: 'c', current_step: 1, updated_by: null }),
+    mk({ id: 'd', current_step: 1, updated_by: 'u-fiscal' })
+  ];
+  assert.deepEqual(flow.arrivals(before, after, ctxF).map(t => t.id), ['a', 'c']);
+  assert.deepEqual(flow.arrivals(null, after, ctxF), []);
+});
+
+test('summary conta caixa, atrasadas, hoje e comigo', () => {
+  const tasks = [
+    mk({ id: 'a', due_date: '2026-11-01' }),
+    mk({ id: 'b', due_date: '2026-11-09', assigned_to: 'u-atend' }),
+    mk({ id: 'c' }),
+    mk({ id: 'd', current_step: 1 })
+  ];
+  assert.deepEqual(flow.summary(tasks, atend, '2026-11-09'), { inbox: 3, late: 1, today: 1, mine: 1 });
+});
+
+test('mensagens de validação da tela aparecem como escritas', () => {
+  assert.equal(flow.errorMessage({ userMessage: 'O dia precisa estar entre 1 e 28.' }), 'O dia precisa estar entre 1 e 28.');
+});
