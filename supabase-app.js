@@ -176,7 +176,7 @@ function startDataSync(user) {
   let stopped=false, connected=false, lastRecovery=Date.now();
   const request = groups => { if (!stopped) void loadData(user,groups,false).catch(error=>console.warn("Data refresh failed",error)); };
   const recover = (force=false) => {
-    if (stopped || (!force && Date.now()-lastRecovery < 60_000)) return;
+    if (stopped || (!force && Date.now()-lastRecovery < 10*60_000)) return;
     lastRecovery=Date.now(); request(allGroups);
     void activeHistory?.controller.recover().catch(error=>console.warn("Message recovery failed",error));
   };
@@ -202,17 +202,19 @@ function startDataSync(user) {
   });
   // RLS hides future announcements from regular users. Check only IDs/versions
   // at the schedule boundary, fetching bodies only when the visible set changes.
+  let lastAnnouncementCheck=Date.now();
   const announcementScheduleTimer=window.setInterval(async()=>{
     if(stopped)return;
     const epoch=dataEpoch;await publishAnnouncements(epoch);
-    if((dataState.profile||window.conectaCurrentProfile)?.role!=="admin") {
+    if((dataState.profile||window.conectaCurrentProfile)?.role!=="admin" && document.visibilityState==="visible" && Date.now()-lastAnnouncementCheck>=10*60_000) {
+      lastAnnouncementCheck=Date.now();
       const {data,error}=await supabase.from("global_announcements").select("id,updated_at");
       if(stopped||epoch!==dataEpoch||error)return;
       const signature=rows=>JSON.stringify((rows||[]).map(row=>[row.id,row.updated_at]).sort((a,b)=>a[0].localeCompare(b[0])));
       if(signature(data)!==signature(dataState.announcements))request(["announcements"]);
     }
   },60_000);
-  const recoveryTimer=window.setInterval(()=>{if(document.visibilityState==="visible")recover();},5*60_000);
+  const recoveryTimer=window.setInterval(()=>{if(document.visibilityState==="visible")recover();},30*60_000);
   const onVisible=()=>{if(document.visibilityState==="visible")recover();};
   const onFocus=()=>recover(),onOnline=()=>recover(true);
   window.addEventListener("focus",onFocus);window.addEventListener("online",onOnline);document.addEventListener("visibilitychange",onVisible);

@@ -480,7 +480,7 @@
 
   const previous = renderView;
   renderView = window.renderView = view => { previous(view); if (view === 'Tarefas') renderTasks(); };
-  nav.onclick = () => { document.querySelectorAll('.nav button,.channel').forEach(b => b.classList.toggle('active', b === nav)); renderView('Tarefas'); if (ready && Date.now() - lastLoad > 60_000) schedule(); };
+  nav.onclick = () => { document.querySelectorAll('.nav button,.channel').forEach(b => b.classList.toggle('active', b === nav)); renderView('Tarefas'); if (ready && Date.now() - lastLoad > 10 * 60_000) schedule(); };
   window.addEventListener('conecta-profile-ready', () => { if (window.conectaCurrentProfile?.active !== false) start(); });
   window.addEventListener('conecta-auth-session-reset', reset);
   window.addEventListener('focus', () => { if (ready && Date.now() - lastLoad > 60_000) schedule(); });
