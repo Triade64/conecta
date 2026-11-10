@@ -51,8 +51,8 @@ test('visões: caixa, setor, enviadas e todas', () => {
   assert.deepEqual(ids('inbox', atend), []);               // ninguém assumiu
   assert.deepEqual(ids('turn', atend), ['a']);
   assert.deepEqual(ids('turn', fiscal), ['b']);
-  assert.deepEqual(ids('sector', fiscal), ['b', 'c']);    // 'a' ainda não chegou ao Fiscal; 'c' já passou
-  assert.deepEqual(ids('sector', atend), ['a', 'b', 'c']); // 'b' e 'c' já passaram pelo Atendimento
+  assert.deepEqual(ids('sector', fiscal), ['b']);         // abertas: só as que estão agora com o Fiscal
+  assert.deepEqual(ids('sector', atend), ['a']);
   assert.deepEqual(ids('sent', atend), ['a', 'b']);
   assert.deepEqual(ids('all', fiscal), []);
   assert.deepEqual(ids('all', admin), ['a', 'b', 'c']);

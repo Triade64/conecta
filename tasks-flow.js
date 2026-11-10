@@ -75,7 +75,8 @@
     if (view === 'inbox') return isMyTurn(task, ctx) && !!ctx.userId && task.assigned_to === ctx.userId;
     if (view === 'turn') return isMyTurn(task, ctx);
     // Só tarefas que já chegaram ao setor: etapa atual dele ou etapas dele já percorridas.
-    if (view === 'sector') return reachedSector(task, ctx);
+    // Abertas: só as que estão agora com o setor. Concluídas/canceladas: as que passaram por ele.
+    if (view === 'sector') return isOpen(task) ? isMyTurn(task, ctx) : reachedSector(task, ctx);
     if (view === 'sent') return task.created_by === ctx.userId;
     return !!ctx.admin;
   };

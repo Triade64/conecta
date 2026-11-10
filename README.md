@@ -38,6 +38,7 @@ Para uma instalação nova, execute os scripts no SQL Editor do Supabase nesta o
 24. `supabase/chat-reactions-pins.sql` (reações e mensagens fixadas nas conversas)
 25. `supabase/chat-reactions-any-emoji.sql`
 26. `supabase/performance-indexes-policies.sql`
+27. `supabase/tasks-release-on-sector-change.sql`
 
 ## Calendário do escritório
 
