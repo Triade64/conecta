@@ -13,8 +13,8 @@ test('message bursts refresh conversations and counters without reloading unrela
  for(let i=0;i<12;i++)for(const h of live.handlers)if(['conversations','messages'].includes(h.filter.table))h.fn({eventType:'UPDATE',new:{id:'msg'}});
  await t.load([]);assert.deepEqual(t.calls.sort(),['conversations','get_unread_counts']);t.stop();
 });
-test('minute scheduler evaluates announcements locally; fallback network refresh is five minutes',async()=>{
- const t=setup();t.ctx.startDataSync({id:'me'});await t.load([]);t.calls.length=0;await t.intervals.find(i=>i.ms===60000).fn();await t.load([]);assert.equal(t.calls.length,0);assert(t.intervals.some(i=>i.ms===300000));t.stop();
+test('minute scheduler evaluates announcements locally; fallback network refresh is thirty minutes',async()=>{
+ const t=setup();t.ctx.startDataSync({id:'me'});await t.load([]);t.calls.length=0;await t.intervals.find(i=>i.ms===60000).fn();await t.load([]);assert.equal(t.calls.length,0);assert(t.intervals.some(i=>i.ms===1800000));t.stop();
 });
 test('status events do not reload favorites or the calendar',async()=>{
  const t=setup();t.ctx.startDataSync({id:'me'});await t.load([]);t.calls.length=0;
@@ -26,9 +26,11 @@ test('data returned after an account switch is never dispatched',async()=>{
 test('non-admin full refresh skips the administrative profiles directory',async()=>{
  const t=setup();t.tables.profiles[0].role='fiscal';await t.load();assert.equal(t.calls.filter(name=>name==='profiles').length,1);t.stop();
 });
-test('regular users detect newly scheduled announcements with a metadata check, not a full refresh',async()=>{
+test('regular users detect newly scheduled announcements with a metadata check every ten minutes, not a full refresh',async()=>{
  const t=setup();t.tables.profiles[0].role='fiscal';t.ctx.startDataSync({id:'me'});await t.load([]);t.calls.length=0;
  t.tables.global_announcements.push({id:'scheduled',title:'Aviso',body:'Texto',is_active:true,starts_at:new Date(Date.now()-1000).toISOString(),updated_at:'new'});
+ await t.intervals.find(i=>i.ms===60000).fn();await t.load([]);assert.deepEqual(t.calls,[]);
+ const realNow=Date.now;Date.now=()=>realNow()+11*60_000;
  await t.intervals.find(i=>i.ms===60000).fn();await t.load([]);
- assert.deepEqual(t.calls,['global_announcements','global_announcements']);assert(t.events.some(e=>e.type==='conecta-global-announcement-sync'&&e.detail.some(row=>row.id==='scheduled')));t.stop();
+ assert.deepEqual(t.calls,['global_announcements','global_announcements']);Date.now=realNow;assert(t.events.some(e=>e.type==='conecta-global-announcement-sync'&&e.detail.some(row=>row.id==='scheduled')));t.stop();
 });
